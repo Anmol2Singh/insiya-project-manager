@@ -1,0 +1,9 @@
+Using Project ID: 4f5e508a-4ef6-4166-ae3f-49c506325f43
+--- Testing Table: swh_checklist ---
+Table is empty.
+Insert Status: 400 Bad Request
+Insert Body: {"code":"23502","details":"Failing row contains (747b536f-fd02-4484-b032-fc825c47a4db, 4f5e508a-4ef6-4166-ae3f-49c506325f43, null, Diag Test, 0, 0, 0, null, 0, null, 0, null, 2026-01-25 15:50:20.944495+00, 2026-01-25 15:50:20.944495+00, 9992).","hint":null,"message":"null value in column \"s_no\" of relation \"swh_checklist\" violates not-null constraint"}
+--- Testing Table: payment_terms ---
+Table is empty.
+Insert Status: 400 Bad Request
+Insert Body: {"code":"23502","details":"Failing row contains (7ff28d0b-817b-48a0-8c78-75847c25bf27, 4f5e508a-4ef6-4166-ae3f-49c506325f43, null, 0.00, 0.00, 0.00, null, 2026-01-25 15:50:21.774743+00, 2026-01-25 15:50:21.774743+00, Diag Test, 0).","hint":null,"message":"null value in column \"term_name\" of relation \"payment_terms\" violates not-null constraint"}
