@@ -186,13 +186,14 @@ export default function FilterProjectsPage() {
     doc.setFont("helvetica", "normal")
     doc.text(`Generated Date: ${new Date().toLocaleDateString("en-IN")} | Total Results: ${filteredProjects.length}`, 14, 25)
 
-    const tableHeaders = ["S No.", "Customer Name", "Mobile No.", "ID", "Type", "City / Locality", "Order Value", "Extra Work", "Payment Recd", "Balance", "Remark"]
+    const tableHeaders = ["S No.", "Customer Name", "Mobile No.", "ID", "Type", "Sales Man", "City / Locality", "Order Value", "Extra Work", "Payment Recd", "Balance", "Remark"]
     const tableRows = filteredProjects.map((p, idx) => [
       idx + 1,
       p.site_name,
       p.mobile_number || "-",
       p.id_no,
       p.order_type,
+      p.salesman_name || "-",
       extractCityName(p.address),
       formatPdfCurrency(p.order_value),
       formatPdfCurrency(p.extra_work_value || 0),
@@ -223,16 +224,17 @@ export default function FilterProjectsPage() {
       },
       columnStyles: {
         0: { cellWidth: 10, halign: "center" },
-        1: { cellWidth: 58, fontStyle: "bold", fontSize: 8.5 },
-        2: { cellWidth: 24, halign: "center" },
-        3: { cellWidth: 12, halign: "center" },
-        4: { cellWidth: 22 },
-        5: { cellWidth: 26 },
-        6: { cellWidth: 24, halign: "right" },
-        7: { cellWidth: 20, halign: "right" },
-        8: { cellWidth: 24, halign: "right" },
-        9: { cellWidth: 24, halign: "right", fontStyle: "bold" },
-        10: { cellWidth: "auto" },
+        1: { cellWidth: 50, fontStyle: "bold", fontSize: 8.5 }, // Customer Name
+        2: { cellWidth: 22, halign: "center" }, // Mobile No.
+        3: { cellWidth: 11, halign: "center" },
+        4: { cellWidth: 20 },
+        5: { cellWidth: 20 }, // Sales Man
+        6: { cellWidth: 22 },
+        7: { cellWidth: 21, halign: "right" },
+        8: { cellWidth: 18, halign: "right" },
+        9: { cellWidth: 21, halign: "right" },
+        10: { cellWidth: 21, halign: "right", fontStyle: "bold" },
+        11: { cellWidth: "auto" },
       },
     })
 
@@ -270,6 +272,7 @@ export default function FilterProjectsPage() {
         "Account Clearance Date": clearanceDate,
         "Customer ID": p.id_no,
         "Order Type": p.order_type,
+        "Sales Man Name": p.salesman_name || "-",
         "Customer / Site Name": p.site_name,
         "Mobile Number": p.mobile_number || "-",
         "Address": p.address,

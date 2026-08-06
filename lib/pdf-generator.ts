@@ -47,9 +47,9 @@ export function generateProjectLedgerPDF(
   const companyName = getActiveCompany().name
 
   // High-Contrast Black & White Print Colors (Ink Saving & Extremely Readable)
-  const headerBg = [240, 240, 240] // Light gray fill for headers
-  const textBlack = [0, 0, 0] // Solid Black
-  const borderLine = [120, 120, 120] // Crisp line borders
+  const headerBg: [number, number, number] = [240, 240, 240] // Light gray fill for headers
+  const textBlack: [number, number, number] = [0, 0, 0] // Solid Black
+  const borderLine: [number, number, number] = [120, 120, 120] // Crisp line borders
 
   // Calculation rules: Order value display = order_value + extra_work_value
   const baseOrderValue = project.order_value || 0
@@ -115,9 +115,10 @@ export function generateProjectLedgerPDF(
   let rightY = colStartY
   const hpSpecs = project.hp_type ? `${project.hp_type} (${project.hp_qty || 0} Qty)` : "N/A"
   const tankSpecs = project.tank_type ? `${project.tank_type} (${project.tank_qty || 0} Qty)` : "N/A"
+  const salesmanText = project.salesman_name ? `Sales Man: ${project.salesman_name}` : ""
   const remarkText = project.work_remark ? `Work Remark: ${project.work_remark}` : ""
   const remarkLines = remarkText ? doc.splitTextToSize(remarkText, boxWidth - 98) : []
-  const rightTotalHeight = 5 + 5 + (remarkLines.length > 0 ? remarkLines.length * 4 : 0)
+  const rightTotalHeight = 5 + 5 + (salesmanText ? 5 : 0) + (remarkLines.length > 0 ? remarkLines.length * 4 : 0)
 
   const contentHeight = Math.max(leftTotalHeight, rightTotalHeight)
   const boxHeight = 7 + titleHeight + contentHeight + 4
@@ -150,6 +151,12 @@ export function generateProjectLedgerPDF(
   rightY += 5
   doc.text(`Storage Tank: ${tankSpecs}`, 115, rightY)
   rightY += 5
+  if (salesmanText) {
+    doc.setFont("helvetica", "bold")
+    doc.text(salesmanText, 115, rightY)
+    doc.setFont("helvetica", "normal")
+    rightY += 5
+  }
   if (remarkLines.length > 0) {
     doc.setFontSize(8.5)
     doc.setFont("helvetica", "italic")

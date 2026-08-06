@@ -127,7 +127,7 @@ export function MoveCopyCustomerDialog({ open, onOpenChange, project }: MoveCopy
         } else {
           // Copy mode
           const newProjectId = generateUUID()
-          const nextIdNo = (targetData.projects.reduce((max, p) => Math.max(max, p.id_no || 0), 0) || 1000) + 1
+          const nextIdNo = (targetData.projects.reduce((max: number, p: Project) => Math.max(max, p.id_no || 0), 0) || 1000) + 1
           const newProject = {
             ...currentProj,
             id: newProjectId,

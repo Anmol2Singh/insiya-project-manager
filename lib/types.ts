@@ -105,3 +105,13 @@ export type ProjectSummary = Pick<Project,
   'order_value' | 'extra_work_value' | 'payment_received' |
   'work_remark' | 'salesman_name' | 'balance' | 'created_at' | 'updated_at'
 >
+
+export interface DBData {
+  projects: Project[]
+  payment_terms: PaymentTerm[]
+  ledger_entries: LedgerEntry[]
+  expenses: Expense[]
+  calling_records: CallingRecord[]
+  swh_checklist: SwhChecklistItem[]
+  work_remarks: WorkRemark[]
+}
