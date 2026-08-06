@@ -1,8 +1,6 @@
 "use client"
 
-import React from "react"
-
-import { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
 import {
@@ -15,16 +13,18 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import type { Expense } from "@/lib/types"
 
 interface AddExpenseDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   projectId: string
   nextSrNo: number
+  expense?: Expense | null
   onSuccess: () => void
 }
 
-export function AddExpenseDialog({ open, onOpenChange, projectId, nextSrNo, onSuccess }: AddExpenseDialogProps) {
+export function AddExpenseDialog({ open, onOpenChange, projectId, nextSrNo, expense, onSuccess }: AddExpenseDialogProps) {
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split("T")[0],
@@ -32,34 +32,58 @@ export function AddExpenseDialog({ open, onOpenChange, projectId, nextSrNo, onSu
     expense: "",
   })
 
+  useEffect(() => {
+    if (expense) {
+      setFormData({
+        date: expense.date ? expense.date.split("T")[0] : new Date().toISOString().split("T")[0],
+        particular: expense.particular || "",
+        expense: expense.expense?.toString() || "",
+      })
+    } else {
+      setFormData({
+        date: new Date().toISOString().split("T")[0],
+        particular: "",
+        expense: "",
+      })
+    }
+  }, [expense, open])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
 
     try {
       const supabase = createClient()
-
-      const { error } = await supabase.from("expenses").insert({
+      const payload = {
         project_id: projectId,
-        sr_no: nextSrNo,
+        sr_no: expense ? expense.sr_no : nextSrNo,
         date: formData.date,
         particular: formData.particular || null,
         expense: parseFloat(formData.expense) || 0,
-      })
+      }
 
-      if (error) throw error
+      if (expense) {
+        const { error } = await supabase
+          .from("expenses")
+          .update(payload)
+          .eq("id", expense.id)
 
-      setFormData({
-        date: new Date().toISOString().split("T")[0],
-        particular: "",
-        expense: "",
-      })
+        if (error) throw error
+        toast.success("Expense updated successfully")
+      } else {
+        const { error } = await supabase
+          .from("expenses")
+          .insert(payload)
+
+        if (error) throw error
+        toast.success("Expense added successfully")
+      }
 
       onSuccess()
       onOpenChange(false)
     } catch (error: any) {
-      console.error("Error adding expense:", error)
-      toast.error(error.message || "Failed to add expense")
+      console.error("Error saving expense:", error)
+      toast.error(error.message || "Failed to save expense")
     } finally {
       setLoading(false)
     }
@@ -69,7 +93,7 @@ export function AddExpenseDialog({ open, onOpenChange, projectId, nextSrNo, onSu
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Add Expense</DialogTitle>
+          <DialogTitle>{expense ? "Edit Expense" : "Add Expense"}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -111,8 +135,8 @@ export function AddExpenseDialog({ open, onOpenChange, projectId, nextSrNo, onSu
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={loading || !formData.expense} className="bg-primary text-primary-foreground">
-              {loading ? "Adding..." : "Add Expense"}
+            <Button type="submit" disabled={loading || !formData.expense} className="bg-primary text-primary-foreground font-bold">
+              {loading ? (expense ? "Saving..." : "Adding...") : (expense ? "Save Changes" : "Add Expense")}
             </Button>
           </div>
         </form>

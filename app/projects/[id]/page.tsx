@@ -129,7 +129,7 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
                 { value: "payments", label: "Payment Terms" },
                 { value: "expenses", label: "Project Expenses" },
                 { value: "calls", label: "Call Records" },
-                { value: "checklist", label: "SWH Checklist" },
+                { value: "checklist", label: "Checklist" },
                 { value: "remarks", label: "Work Remarks" },
               ].map((tab) => (
                 <TabsTrigger
@@ -153,6 +153,12 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
                   <LedgerTab
                     entries={ledgerEntries}
                     projectId={id}
+                    project={project}
+                    paymentTerms={paymentTerms}
+                    expenses={expenses}
+                    callingRecords={callingRecords}
+                    swhChecklist={swhChecklist}
+                    workRemarks={workRemarks}
                     onRefresh={() => mutate()}
                   />
                 </motion.div>

@@ -1,8 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Plus, Trash2, Edit2, Calendar, CreditCard, FileText } from "lucide-react"
+import { Plus, Trash2, Edit2, Calendar, CreditCard, FileText, Download, FileSpreadsheet, UploadCloud } from "lucide-react"
 import {
   Table,
   TableBody,
@@ -14,30 +14,53 @@ import {
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import type { LedgerEntry } from "@/lib/types"
+import type { LedgerEntry, Project, PaymentTerm, Expense, CallingRecord, SwhChecklistItem, WorkRemark } from "@/lib/types"
 import { AddLedgerDialog } from "./add-ledger-dialog"
 import { createClient } from "@/lib/supabase/client"
 import { syncProjectTotals } from "@/lib/project-utils"
+import { generateProjectLedgerPDF } from "@/lib/pdf-generator"
+import { exportCustomerLedgerToExcel, importCustomerLedgerFromExcel } from "@/lib/customer-excel-utils"
 import { toast } from "sonner"
 
 interface LedgerTabProps {
   entries: LedgerEntry[]
   projectId: string
+  project?: Project
+  paymentTerms?: PaymentTerm[]
+  expenses?: Expense[]
+  callingRecords?: CallingRecord[]
+  swhChecklist?: SwhChecklistItem[]
+  workRemarks?: WorkRemark[]
   onRefresh: () => void
 }
 
-export function LedgerTab({ entries, projectId, onRefresh }: LedgerTabProps) {
+export function LedgerTab({
+  entries,
+  projectId,
+  project: initialProject,
+  paymentTerms = [],
+  expenses = [],
+  callingRecords = [],
+  swhChecklist = [],
+  workRemarks = [],
+  onRefresh,
+}: LedgerTabProps) {
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [editingEntry, setEditingEntry] = useState<LedgerEntry | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [exportingPDF, setExportingPDF] = useState(false)
+  const [importingExcel, setImportingExcel] = useState(false)
 
-  const formatCurrency = (value: number) => {
+  const excelInputRef = useRef<HTMLInputElement | null>(null)
+
+  const formatCurrency = (value: number | null | undefined, allowZero = false) => {
+    if ((value === 0 || value === null || value === undefined) && !allowZero) return ""
     return new Intl.NumberFormat("en-IN", {
       style: "currency",
       currency: "INR",
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(value)
+    }).format(value || 0)
   }
 
   const formatDate = (dateStr: string) => {
@@ -72,14 +95,123 @@ export function LedgerTab({ entries, projectId, onRefresh }: LedgerTabProps) {
     }
   }
 
+  const handleExportPDF = async () => {
+    setExportingPDF(true)
+    try {
+      let targetProject = initialProject
+      let targetTerms = paymentTerms
+      let targetExpenses = expenses
+      let targetCalls = callingRecords
+      let targetChecklist = swhChecklist
+      let targetRemarks = workRemarks
+
+      const supabase = createClient()
+
+      if (!targetProject) {
+        const { data } = await supabase.from("projects").select("*").eq("id", projectId).single()
+        if (data) targetProject = data
+      }
+
+      if (!targetTerms || targetTerms.length === 0) {
+        const { data } = await supabase.from("payment_terms").select("*").eq("project_id", projectId)
+        if (data) targetTerms = data
+      }
+
+      if (!targetExpenses || targetExpenses.length === 0) {
+        const { data } = await supabase.from("expenses").select("*").eq("project_id", projectId)
+        if (data) targetExpenses = data
+      }
+
+      if (!targetCalls || targetCalls.length === 0) {
+        const { data } = await supabase.from("calling_records").select("*").eq("project_id", projectId)
+        if (data) targetCalls = data
+      }
+
+      if (!targetChecklist || targetChecklist.length === 0) {
+        const { data } = await supabase.from("swh_checklist").select("*").eq("project_id", projectId)
+        if (data) targetChecklist = data
+      }
+
+      if (!targetRemarks || targetRemarks.length === 0) {
+        const { data } = await supabase.from("work_remarks").select("*").eq("project_id", projectId)
+        if (data) targetRemarks = data
+      }
+
+      if (!targetProject) {
+        toast.error("Project details not found")
+        return
+      }
+
+      generateProjectLedgerPDF(
+        targetProject,
+        entries,
+        targetTerms,
+        targetExpenses,
+        targetCalls,
+        targetChecklist,
+        targetRemarks
+      )
+      toast.success("Project PDF report exported successfully!")
+    } catch (e: any) {
+      console.error("Error exporting PDF:", e)
+      toast.error("Failed to export PDF")
+    } finally {
+      setExportingPDF(false)
+    }
+  }
+
+  const handleExportCustomerExcel = () => {
+    if (!initialProject) {
+      toast.error("Project details missing for Excel export")
+      return
+    }
+    try {
+      exportCustomerLedgerToExcel(
+        initialProject,
+        entries,
+        paymentTerms,
+        expenses,
+        callingRecords,
+        swhChecklist,
+        workRemarks
+      )
+      toast.success(`Exported Excel ledger for ${initialProject.site_name}!`)
+    } catch (e: any) {
+      console.error("Error exporting Customer Excel:", e)
+      toast.error("Failed to export Excel ledger")
+    }
+  }
+
+  const handleImportCustomerExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    try {
+      setImportingExcel(true)
+      const res = await importCustomerLedgerFromExcel(projectId, file)
+      if (res.success) {
+        toast.success(res.message)
+        onRefresh()
+      } else {
+        toast.error(res.message)
+      }
+    } catch (err: any) {
+      console.error("Failed to import Customer Ledger Excel:", err)
+      toast.error("Error importing Customer Ledger Excel")
+    } finally {
+      setImportingExcel(false)
+      if (excelInputRef.current) excelInputRef.current.value = ""
+    }
+  }
+
   // Calculate totals
   const totals = entries.reduce(
     (acc, entry) => ({
-      salesMValue: acc.salesMValue + entry.sales_m_value,
-      mOutwardValue: acc.mOutwardValue + entry.m_outward_value,
-      orderValue: acc.orderValue + entry.order_value,
-      extraWorkValue: acc.extraWorkValue + entry.extra_work_value,
-      paymentReceived: acc.paymentReceived + entry.payment_received,
+      salesMValue: acc.salesMValue + (entry.sales_m_value || 0),
+      mOutwardValue: acc.mOutwardValue + (entry.m_outward_value || 0),
+      orderValue: acc.orderValue + (entry.order_value || 0),
+      extraWorkValue: acc.extraWorkValue + (entry.extra_work_value || 0),
+      paymentReceived: acc.paymentReceived + (entry.payment_received || 0),
     }),
     { salesMValue: 0, mOutwardValue: 0, orderValue: 0, extraWorkValue: 0, paymentReceived: 0 }
   )
@@ -90,15 +222,59 @@ export function LedgerTab({ entries, projectId, onRefresh }: LedgerTabProps) {
   return (
     <>
       <Card className="border-0 shadow-lg bg-card/50 backdrop-blur-sm overflow-hidden">
-        <CardHeader className="flex flex-row items-center justify-between border-b bg-muted/30 pb-4">
+        <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between border-b bg-muted/30 pb-4 gap-4">
           <div>
             <CardTitle className="text-xl font-bold tracking-tight">Ledger Records</CardTitle>
             <p className="text-sm text-muted-foreground mt-1">Detailed financial history for this project</p>
           </div>
-          <Button size="sm" onClick={() => setShowAddDialog(true)} className="bg-primary text-primary-foreground shadow-md hover:scale-105 transition-transform">
-            <Plus className="h-4 w-4 mr-2" />
-            Add New Entry
-          </Button>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleExportPDF}
+              disabled={exportingPDF}
+              className="bg-card text-foreground hover:bg-primary/10 font-bold border-border shadow-sm"
+            >
+              <Download className="h-4 w-4 mr-2 text-primary" />
+              {exportingPDF ? "Generating PDF..." : "Export PDF"}
+            </Button>
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleExportCustomerExcel}
+              className="bg-card text-foreground hover:bg-success/10 font-bold border-border shadow-sm"
+              title="Export all 6 tabs into a multi-sheet Excel file"
+            >
+              <FileSpreadsheet className="h-4 w-4 mr-2 text-success" />
+              Export Excel
+            </Button>
+
+            <input
+              type="file"
+              ref={excelInputRef}
+              accept=".xlsx, .xls"
+              onChange={handleImportCustomerExcel}
+              className="hidden"
+            />
+
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={importingExcel}
+              onClick={() => excelInputRef.current?.click()}
+              className="bg-card text-foreground hover:bg-primary/10 font-bold border-border shadow-sm"
+              title="Import Customer Ledger data from Excel"
+            >
+              <UploadCloud className="h-4 w-4 mr-2 text-primary" />
+              {importingExcel ? "Importing..." : "Import Excel"}
+            </Button>
+
+            <Button size="sm" onClick={() => setShowAddDialog(true)} className="bg-primary text-primary-foreground shadow-md hover:scale-105 transition-transform font-bold">
+              <Plus className="h-4 w-4 mr-2" />
+              Add New Entry
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           {/* Desktop Table */}
@@ -108,7 +284,7 @@ export function LedgerTab({ entries, projectId, onRefresh }: LedgerTabProps) {
                 <TableRow className="bg-muted/50 hover:bg-muted/50 border-b">
                   <TableHead className="font-bold text-foreground w-12 text-center uppercase text-[10px] tracking-widest">Sr</TableHead>
                   <TableHead className="font-bold text-foreground uppercase text-[10px] tracking-widest">Date</TableHead>
-                  <TableHead className="font-bold text-foreground uppercase text-[10px] tracking-widest">Type</TableHead>
+                  <TableHead className="font-bold text-foreground uppercase text-[10px] tracking-widest">Payment Type</TableHead>
                   <TableHead className="font-bold text-foreground uppercase text-[10px] tracking-widest">Particulars</TableHead>
                   <TableHead className="font-bold text-foreground text-center uppercase text-[10px] tracking-widest">Bill</TableHead>
                   <TableHead className="font-bold text-foreground text-right bg-warning/10 uppercase text-[10px] tracking-widest">Sales M</TableHead>
@@ -123,7 +299,7 @@ export function LedgerTab({ entries, projectId, onRefresh }: LedgerTabProps) {
                 <AnimatePresence mode="popLayout">
                   {entries.map((entry, index) => (
                     <motion.tr
-                      key={entry.id || `entry-${index}`}
+                      key={entry.id ? `ledger-${entry.id}` : `ledger-idx-${index}`}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, x: -20 }}
@@ -141,15 +317,15 @@ export function LedgerTab({ entries, projectId, onRefresh }: LedgerTabProps) {
                       </TableCell>
                       <TableCell className="max-w-[200px] truncate font-medium">{entry.particulars}</TableCell>
                       <TableCell className="text-center">
-                        {entry.bill_submitted ? (
-                          <div className="flex justify-center">
+                        <div className="flex justify-center">
+                          {entry.payment_receipt ? (
+                            <Badge className="bg-info text-info-foreground text-[10px] h-5 py-0 px-2 font-bold uppercase rounded-full">Receipt</Badge>
+                          ) : entry.bill_submitted ? (
                             <Badge className="bg-success text-success-foreground text-[10px] h-5 py-0 px-2 font-bold uppercase rounded-full">Submitted</Badge>
-                          </div>
-                        ) : (
-                          <div className="flex justify-center">
+                          ) : (
                             <Badge variant="outline" className="text-[10px] h-5 py-0 px-2 font-bold uppercase rounded-full border-muted-foreground/30 text-muted-foreground">Pending</Badge>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="text-right bg-warning/5 font-mono text-xs">{formatCurrency(entry.sales_m_value)}</TableCell>
                       <TableCell className="text-right bg-warning/5 font-mono text-xs">{formatCurrency(entry.m_outward_value)}</TableCell>
@@ -193,11 +369,11 @@ export function LedgerTab({ entries, projectId, onRefresh }: LedgerTabProps) {
                 {entries.length > 0 && (
                   <TableRow className="bg-muted/50 font-bold border-t-2">
                     <TableCell colSpan={5} className="text-right uppercase text-[10px] tracking-widest">Net Totals:</TableCell>
-                    <TableCell className="text-right bg-warning/10 font-mono">{formatCurrency(totals.salesMValue)}</TableCell>
-                    <TableCell className="text-right bg-warning/10 font-mono">{formatCurrency(totals.mOutwardValue)}</TableCell>
-                    <TableCell className="text-right bg-info/10 font-mono">{formatCurrency(totals.orderValue)}</TableCell>
-                    <TableCell className="text-right bg-info/10 font-mono">{formatCurrency(totals.extraWorkValue)}</TableCell>
-                    <TableCell className="text-right bg-success/10 font-mono text-success">{formatCurrency(totals.paymentReceived)}</TableCell>
+                    <TableCell className="text-right bg-warning/10 font-mono">{formatCurrency(totals.salesMValue, true)}</TableCell>
+                    <TableCell className="text-right bg-warning/10 font-mono">{formatCurrency(totals.mOutwardValue, true)}</TableCell>
+                    <TableCell className="text-right bg-info/10 font-mono">{formatCurrency(totals.orderValue, true)}</TableCell>
+                    <TableCell className="text-right bg-info/10 font-mono">{formatCurrency(totals.extraWorkValue, true)}</TableCell>
+                    <TableCell className="text-right bg-success/10 font-mono text-success">{formatCurrency(totals.paymentReceived, true)}</TableCell>
                     <TableCell className="bg-muted/50"></TableCell>
                   </TableRow>
                 )}
@@ -210,7 +386,7 @@ export function LedgerTab({ entries, projectId, onRefresh }: LedgerTabProps) {
             <AnimatePresence>
               {entries.map((entry, index) => (
                 <motion.div
-                  key={entry.id || `m-entry-${index}`}
+                  key={entry.id ? `m-ledger-${entry.id}` : `m-ledger-idx-${index}`}
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: 10 }}
@@ -265,17 +441,17 @@ export function LedgerTab({ entries, projectId, onRefresh }: LedgerTabProps) {
                     <div className="space-y-1 bg-warning/10 p-2 rounded-md border border-warning/20">
                       <p className="text-[9px] font-bold text-warning-foreground uppercase tracking-wider">Material</p>
                       <div className="flex justify-between items-baseline">
-                        <span className="text-[10px] text-muted-foreground">S: {formatCurrency(entry.sales_m_value)}</span>
-                        <span className="text-[10px] text-muted-foreground">O: {formatCurrency(entry.m_outward_value)}</span>
+                        <span className="text-[10px] text-muted-foreground">S: {formatCurrency(entry.sales_m_value || 0)}</span>
+                        <span className="text-[10px] text-muted-foreground">O: {formatCurrency(entry.m_outward_value || 0)}</span>
                       </div>
                     </div>
                     <div className="space-y-1 bg-info/10 p-2 rounded-md border border-info/20">
                       <p className="text-[9px] font-bold text-info-foreground uppercase tracking-wider">Order</p>
-                      <p className="text-xs font-bold">{formatCurrency(entry.order_value + entry.extra_work_value)}</p>
+                      <p className="text-xs font-bold">{formatCurrency((entry.order_value || 0) + (entry.extra_work_value || 0))}</p>
                     </div>
                     <div className="space-y-1 bg-success/10 p-2 rounded-md border border-success/20">
                       <p className="text-[9px] font-bold text-success-foreground uppercase tracking-wider">Received</p>
-                      <p className="text-xs font-bold text-success">{formatCurrency(entry.payment_received)}</p>
+                      <p className="text-xs font-bold text-success">{formatCurrency(entry.payment_received || 0)}</p>
                     </div>
                     <div className="space-y-1 bg-muted p-2 rounded-md border">
                       <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">Ref No</p>

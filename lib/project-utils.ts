@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/client"
+import type { LedgerEntry } from "@/lib/types"
 
 export async function syncProjectTotals(projectId: string) {
     const supabase = createClient()
@@ -12,6 +13,13 @@ export async function syncProjectTotals(projectId: string) {
 
     if (fetchError) throw fetchError
 
+    // 1b. Fetch existing project order_value to preserve initial order_value if ledger doesn't specify one
+    const { data: existingProject } = await supabase
+        .from("projects")
+        .select("order_value")
+        .eq("id", projectId)
+        .single()
+
     // 2. Calculate totals
     let totalSalesM = 0
     let totalMOutward = 0
@@ -19,7 +27,7 @@ export async function syncProjectTotals(projectId: string) {
     let totalExtraWork = 0
     let totalPaymentReceived = 0
 
-    entries?.forEach((entry) => {
+    entries?.forEach((entry: LedgerEntry) => {
         totalSalesM += entry.sales_m_value || 0
         totalMOutward += entry.m_outward_value || 0
         totalOrder += entry.order_value || 0
@@ -27,8 +35,9 @@ export async function syncProjectTotals(projectId: string) {
         totalPaymentReceived += entry.payment_received || 0
     })
 
+    const finalOrderValue = totalOrder > 0 ? totalOrder : (existingProject?.order_value || 0)
     const mBalance = totalSalesM - totalMOutward
-    const balance = totalOrder + totalExtraWork - totalPaymentReceived
+    const balance = finalOrderValue + totalExtraWork - totalPaymentReceived
 
     // 3. Update project table
     const { error: updateError } = await supabase
@@ -36,7 +45,7 @@ export async function syncProjectTotals(projectId: string) {
         .update({
             sales_m_value: totalSalesM,
             m_outward_value: totalMOutward,
-            order_value: totalOrder,
+            order_value: finalOrderValue,
             extra_work_value: totalExtraWork,
             payment_received: totalPaymentReceived,
             updated_at: new Date().toISOString()

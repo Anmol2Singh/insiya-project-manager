@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Plus } from "lucide-react"
+import { Plus, Edit2, Trash2 } from "lucide-react"
 import {
   Table,
   TableBody,
@@ -14,6 +14,8 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import type { Expense } from "@/lib/types"
 import { AddExpenseDialog } from "./add-expense-dialog"
+import { createClient } from "@/lib/supabase/client"
+import { toast } from "sonner"
 
 interface ExpensesTabProps {
   expenses: Expense[]
@@ -23,6 +25,8 @@ interface ExpensesTabProps {
 
 export function ExpensesTab({ expenses, projectId, onRefresh }: ExpensesTabProps) {
   const [showAddDialog, setShowAddDialog] = useState(false)
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("en-IN", {
@@ -41,6 +45,29 @@ export function ExpensesTab({ expenses, projectId, onRefresh }: ExpensesTabProps
     })
   }
 
+  const handleDelete = async (expenseId: string) => {
+    if (!confirm("Are you sure you want to delete this expense?")) return
+
+    setDeletingId(expenseId)
+    try {
+      const supabase = createClient()
+      const { error } = await supabase
+        .from("expenses")
+        .delete()
+        .eq("id", expenseId)
+
+      if (error) throw error
+
+      toast.success("Expense deleted successfully")
+      onRefresh()
+    } catch (error: any) {
+      console.error("Error deleting expense:", error)
+      toast.error(error.message || "Failed to delete expense")
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
   const totalExpense = expenses.reduce((sum, exp) => sum + exp.expense, 0)
 
   return (
@@ -53,7 +80,7 @@ export function ExpensesTab({ expenses, projectId, onRefresh }: ExpensesTabProps
               Total: <span className="font-semibold text-foreground">{formatCurrency(totalExpense)}</span>
             </p>
           </div>
-          <Button size="sm" onClick={() => setShowAddDialog(true)} className="bg-primary text-primary-foreground">
+          <Button size="sm" onClick={() => { setEditingExpense(null); setShowAddDialog(true) }} className="bg-primary text-primary-foreground font-bold">
             <Plus className="h-4 w-4 mr-2" />
             Add Expense
           </Button>
@@ -68,20 +95,44 @@ export function ExpensesTab({ expenses, projectId, onRefresh }: ExpensesTabProps
                   <TableHead className="font-semibold text-foreground">Date</TableHead>
                   <TableHead className="font-semibold text-foreground">Particular</TableHead>
                   <TableHead className="font-semibold text-foreground text-right">Expense</TableHead>
+                  <TableHead className="font-semibold text-foreground text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {expenses.map((expense) => (
-                  <TableRow key={expense.id} className="hover:bg-muted/30">
+                  <TableRow key={expense.id} className="hover:bg-muted/30 group">
                     <TableCell>{expense.sr_no}</TableCell>
                     <TableCell>{formatDate(expense.date)}</TableCell>
                     <TableCell>{expense.particular || "-"}</TableCell>
                     <TableCell className="text-right font-medium">{formatCurrency(expense.expense)}</TableCell>
+                    <TableCell className="text-right pr-2">
+                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-primary hover:bg-primary/10"
+                          onClick={() => setEditingExpense(expense)}
+                          title="Edit expense"
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                          onClick={() => handleDelete(expense.id)}
+                          disabled={deletingId === expense.id}
+                          title="Delete expense"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </TableCell>
                   </TableRow>
                 ))}
                 {expenses.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                       No expenses recorded
                     </TableCell>
                   </TableRow>
@@ -91,6 +142,7 @@ export function ExpensesTab({ expenses, projectId, onRefresh }: ExpensesTabProps
                   <TableRow className="bg-warning/20 font-semibold hover:bg-warning/20">
                     <TableCell colSpan={3} className="text-right">Total:</TableCell>
                     <TableCell className="text-right">{formatCurrency(totalExpense)}</TableCell>
+                    <TableCell></TableCell>
                   </TableRow>
                 )}
               </TableBody>
@@ -108,7 +160,30 @@ export function ExpensesTab({ expenses, projectId, onRefresh }: ExpensesTabProps
                   </div>
                   <p className="font-medium text-foreground mt-1">{expense.particular || "No description"}</p>
                 </div>
-                <p className="font-semibold text-foreground">{formatCurrency(expense.expense)}</p>
+                <div className="flex items-center gap-3">
+                  <p className="font-semibold text-foreground">{formatCurrency(expense.expense)}</p>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-primary"
+                      onClick={() => setEditingExpense(expense)}
+                      title="Edit expense"
+                    >
+                      <Edit2 className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-destructive"
+                      onClick={() => handleDelete(expense.id)}
+                      disabled={deletingId === expense.id}
+                      title="Delete expense"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
               </div>
             ))}
             {expenses.length === 0 && (
@@ -121,10 +196,14 @@ export function ExpensesTab({ expenses, projectId, onRefresh }: ExpensesTabProps
       </Card>
 
       <AddExpenseDialog
-        open={showAddDialog}
-        onOpenChange={setShowAddDialog}
+        open={showAddDialog || !!editingExpense}
+        onOpenChange={(open) => {
+          if (!open) setEditingExpense(null)
+          setShowAddDialog(open && !editingExpense)
+        }}
         projectId={projectId}
         nextSrNo={expenses.length + 1}
+        expense={editingExpense}
         onSuccess={onRefresh}
       />
     </>

@@ -1,8 +1,6 @@
 "use client"
 
-import React from "react"
-
-import { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
 import {
@@ -15,21 +13,37 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import type { CallingRecord } from "@/lib/types"
 
 interface AddCallingRecordDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   projectId: string
   nextSrNo: number
+  record?: CallingRecord | null
   onSuccess: () => void
 }
 
-export function AddCallingRecordDialog({ open, onOpenChange, projectId, nextSrNo, onSuccess }: AddCallingRecordDialogProps) {
+export function AddCallingRecordDialog({ open, onOpenChange, projectId, nextSrNo, record, onSuccess }: AddCallingRecordDialogProps) {
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split("T")[0],
     description: "",
   })
+
+  useEffect(() => {
+    if (record) {
+      setFormData({
+        date: record.date ? record.date.split("T")[0] : new Date().toISOString().split("T")[0],
+        description: record.description || "",
+      })
+    } else {
+      setFormData({
+        date: new Date().toISOString().split("T")[0],
+        description: "",
+      })
+    }
+  }, [record, open])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -38,25 +52,35 @@ export function AddCallingRecordDialog({ open, onOpenChange, projectId, nextSrNo
     try {
       const supabase = createClient()
 
-      const { error } = await supabase.from("calling_records").insert({
+      const payload = {
         project_id: projectId,
-        sr_no: nextSrNo,
+        sr_no: record ? record.sr_no : nextSrNo,
         date: formData.date,
         description: formData.description || null,
-      })
+      }
 
-      if (error) throw error
+      if (record) {
+        const { error } = await supabase
+          .from("calling_records")
+          .update(payload)
+          .eq("id", record.id)
 
-      setFormData({
-        date: new Date().toISOString().split("T")[0],
-        description: "",
-      })
+        if (error) throw error
+        toast.success("Calling record updated successfully")
+      } else {
+        const { error } = await supabase
+          .from("calling_records")
+          .insert(payload)
+
+        if (error) throw error
+        toast.success("Calling record added successfully")
+      }
 
       onSuccess()
       onOpenChange(false)
     } catch (error: any) {
-      console.error("Error adding calling record:", error)
-      toast.error(error.message || "Failed to add calling record")
+      console.error("Error saving calling record:", error)
+      toast.error(error.message || "Failed to save calling record")
     } finally {
       setLoading(false)
     }
@@ -66,7 +90,7 @@ export function AddCallingRecordDialog({ open, onOpenChange, projectId, nextSrNo
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Add Calling Record</DialogTitle>
+          <DialogTitle>{record ? "Edit Calling Record" : "Add Calling Record"}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -95,8 +119,8 @@ export function AddCallingRecordDialog({ open, onOpenChange, projectId, nextSrNo
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={loading} className="bg-primary text-primary-foreground">
-              {loading ? "Adding..." : "Add Record"}
+            <Button type="submit" disabled={loading} className="bg-primary text-primary-foreground font-bold">
+              {loading ? (record ? "Saving..." : "Adding...") : (record ? "Save Changes" : "Add Record")}
             </Button>
           </div>
         </form>

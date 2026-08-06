@@ -1,8 +1,6 @@
 "use client"
 
-import React from "react"
-
-import { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
 import {
@@ -15,21 +13,37 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import type { WorkRemark } from "@/lib/types"
 
 interface AddWorkRemarkDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   projectId: string
   nextSrNo: number
+  remark?: WorkRemark | null
   onSuccess: () => void
 }
 
-export function AddWorkRemarkDialog({ open, onOpenChange, projectId, nextSrNo, onSuccess }: AddWorkRemarkDialogProps) {
+export function AddWorkRemarkDialog({ open, onOpenChange, projectId, nextSrNo, remark, onSuccess }: AddWorkRemarkDialogProps) {
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split("T")[0],
     remark: "",
   })
+
+  useEffect(() => {
+    if (remark) {
+      setFormData({
+        date: remark.date ? remark.date.split("T")[0] : new Date().toISOString().split("T")[0],
+        remark: remark.remark || "",
+      })
+    } else {
+      setFormData({
+        date: new Date().toISOString().split("T")[0],
+        remark: "",
+      })
+    }
+  }, [remark, open])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -37,26 +51,35 @@ export function AddWorkRemarkDialog({ open, onOpenChange, projectId, nextSrNo, o
 
     try {
       const supabase = createClient()
-
-      const { error } = await supabase.from("work_remarks").insert({
+      const payload = {
         project_id: projectId,
-        sr_no: nextSrNo,
+        sr_no: remark ? remark.sr_no : nextSrNo,
         date: formData.date,
         remark: formData.remark || null,
-      })
+      }
 
-      if (error) throw error
+      if (remark) {
+        const { error } = await supabase
+          .from("work_remarks")
+          .update(payload)
+          .eq("id", remark.id)
 
-      setFormData({
-        date: new Date().toISOString().split("T")[0],
-        remark: "",
-      })
+        if (error) throw error
+        toast.success("Work remark updated successfully")
+      } else {
+        const { error } = await supabase
+          .from("work_remarks")
+          .insert(payload)
+
+        if (error) throw error
+        toast.success("Work remark added successfully")
+      }
 
       onSuccess()
       onOpenChange(false)
     } catch (error: any) {
-      console.error("Error adding work remark:", error)
-      toast.error(error.message || "Failed to add work remark")
+      console.error("Error saving work remark:", error)
+      toast.error(error.message || "Failed to save work remark")
     } finally {
       setLoading(false)
     }
@@ -66,7 +89,7 @@ export function AddWorkRemarkDialog({ open, onOpenChange, projectId, nextSrNo, o
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Add Work Remark</DialogTitle>
+          <DialogTitle>{remark ? "Edit Work Remark" : "Add Work Remark"}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -95,8 +118,8 @@ export function AddWorkRemarkDialog({ open, onOpenChange, projectId, nextSrNo, o
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={loading} className="bg-primary text-primary-foreground">
-              {loading ? "Adding..." : "Add Remark"}
+            <Button type="submit" disabled={loading} className="bg-primary text-primary-foreground font-bold">
+              {loading ? (remark ? "Saving..." : "Adding...") : (remark ? "Save Changes" : "Add Remark")}
             </Button>
           </div>
         </form>

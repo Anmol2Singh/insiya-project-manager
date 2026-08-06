@@ -7,16 +7,17 @@ import type { ProjectSummary } from "@/lib/types"
 
 interface SummaryCardsProps {
   projects: ProjectSummary[]
+  isLoading?: boolean
 }
 
 export function SummaryCards({ projects }: SummaryCardsProps) {
   const totals = projects.reduce(
     (acc, project) => ({
-      salesMValue: acc.salesMValue + project.sales_m_value,
-      mOutwardValue: acc.mOutwardValue + project.m_outward_value,
-      orderValue: acc.orderValue + project.order_value,
-      paymentReceived: acc.paymentReceived + project.payment_received,
-      balance: acc.balance + project.balance,
+      salesMValue: acc.salesMValue + (project.sales_m_value || 0),
+      mOutwardValue: acc.mOutwardValue + (project.m_outward_value || 0),
+      orderValue: acc.orderValue + (project.order_value || 0),
+      paymentReceived: acc.paymentReceived + (project.payment_received || 0),
+      balance: acc.balance + (project.balance || 0),
     }),
     { salesMValue: 0, mOutwardValue: 0, orderValue: 0, paymentReceived: 0, balance: 0 }
   )

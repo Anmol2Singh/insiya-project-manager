@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Plus, CheckCircle2, XCircle } from "lucide-react"
+import { Plus, CheckCircle2, XCircle, Edit2, Trash2 } from "lucide-react"
 import {
   Table,
   TableBody,
@@ -15,6 +15,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import type { SwhChecklistItem } from "@/lib/types"
 import { AddChecklistItemDialog } from "./add-checklist-item-dialog"
+import { createClient } from "@/lib/supabase/client"
+import { toast } from "sonner"
 
 interface SwhChecklistTabProps {
   items: SwhChecklistItem[]
@@ -24,13 +26,38 @@ interface SwhChecklistTabProps {
 
 export function SwhChecklistTab({ items, projectId, onRefresh }: SwhChecklistTabProps) {
   const [showAddDialog, setShowAddDialog] = useState(false)
+  const [editingItem, setEditingItem] = useState<SwhChecklistItem | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  const handleDelete = async (itemId: string) => {
+    if (!confirm("Are you sure you want to delete this checklist item?")) return
+
+    setDeletingId(itemId)
+    try {
+      const supabase = createClient()
+      const { error } = await supabase
+        .from("swh_checklist")
+        .delete()
+        .eq("id", itemId)
+
+      if (error) throw error
+
+      toast.success("Checklist item deleted successfully")
+      onRefresh()
+    } catch (error: any) {
+      console.error("Error deleting checklist item:", error)
+      toast.error(error.message || "Failed to delete checklist item")
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   return (
     <>
       <Card className="border-0 shadow-sm">
         <CardHeader className="flex flex-row items-center justify-between pb-3">
-          <CardTitle className="text-lg font-semibold">SWH Checklist</CardTitle>
-          <Button size="sm" onClick={() => setShowAddDialog(true)} className="bg-primary text-primary-foreground">
+          <CardTitle className="text-lg font-semibold">Checklist</CardTitle>
+          <Button size="sm" onClick={() => { setEditingItem(null); setShowAddDialog(true) }} className="bg-primary text-primary-foreground font-bold">
             <Plus className="h-4 w-4 mr-2" />
             Add Item
           </Button>
@@ -52,23 +79,24 @@ export function SwhChecklistTab({ items, projectId, onRefresh }: SwhChecklistTab
                   <TableHead className="font-semibold text-foreground text-center">Installed</TableHead>
                   <TableHead className="font-semibold text-foreground text-right">Balance Qty</TableHead>
                   <TableHead className="font-semibold text-foreground">Remark</TableHead>
+                  <TableHead className="font-semibold text-foreground text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {items.map((item, index) => (
-                  <TableRow key={item.id || `item-${index}`} className="hover:bg-muted/30">
+                  <TableRow key={item.id || `item-${index}`} className="hover:bg-muted/30 group">
                     <TableCell>{item.sr_no}</TableCell>
                     <TableCell className="font-medium">{item.item_name}</TableCell>
                     <TableCell className="text-right">{item.req_qty ?? "-"}</TableCell>
                     <TableCell className="text-center">
-                      {item.our_scope === false ? (
+                      {item.customer_scope || (!item.our_scope && item.customer_scope !== false) ? (
                         <CheckCircle2 className="h-5 w-5 text-success inline" />
                       ) : (
                         <XCircle className="h-5 w-5 text-muted-foreground inline" />
                       )}
                     </TableCell>
                     <TableCell className="text-center">
-                      {item.our_scope === true ? (
+                      {item.our_scope ? (
                         <CheckCircle2 className="h-5 w-5 text-success inline" />
                       ) : (
                         <XCircle className="h-5 w-5 text-muted-foreground inline" />
@@ -96,11 +124,34 @@ export function SwhChecklistTab({ items, projectId, onRefresh }: SwhChecklistTab
                     <TableCell className="max-w-[150px] truncate text-muted-foreground">
                       {item.remark || "-"}
                     </TableCell>
+                    <TableCell className="text-right pr-2">
+                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-primary hover:bg-primary/10"
+                          onClick={() => setEditingItem(item)}
+                          title="Edit item"
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                          onClick={() => handleDelete(item.id)}
+                          disabled={deletingId === item.id}
+                          title="Delete item"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </TableCell>
                   </TableRow>
                 ))}
                 {items.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={12} className="text-center py-8 text-muted-foreground">
                       No checklist items yet
                     </TableCell>
                   </TableRow>
@@ -118,6 +169,27 @@ export function SwhChecklistTab({ items, projectId, onRefresh }: SwhChecklistTab
                     <span className="text-sm text-muted-foreground">#{item.sr_no}</span>
                     <h4 className="font-medium text-foreground">{item.item_name}</h4>
                   </div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-primary"
+                      onClick={() => setEditingItem(item)}
+                      title="Edit item"
+                    >
+                      <Edit2 className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-destructive"
+                      onClick={() => handleDelete(item.id)}
+                      disabled={deletingId === item.id}
+                      title="Delete item"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-3 gap-2 text-sm">
@@ -128,9 +200,9 @@ export function SwhChecklistTab({ items, projectId, onRefresh }: SwhChecklistTab
                   <div>
                     <p className="text-xs text-muted-foreground">Scope</p>
                     <div className="flex items-center gap-1">
-                      {item.our_scope === false ? (
+                      {item.customer_scope ? (
                         <Badge className="bg-success text-success-foreground text-xs py-0 h-5 px-1.5">Customer</Badge>
-                      ) : item.our_scope === true ? (
+                      ) : item.our_scope ? (
                         <Badge className="bg-success text-success-foreground text-xs py-0 h-5 px-1.5">Our</Badge>
                       ) : (
                         <XCircle className="h-4 w-4 text-muted-foreground" />
@@ -146,9 +218,9 @@ export function SwhChecklistTab({ items, projectId, onRefresh }: SwhChecklistTab
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {item.our_scope === false ? (
+                  {item.customer_scope ? (
                     <Badge className="bg-success text-success-foreground text-xs">✓ Customer Scope</Badge>
-                  ) : item.our_scope === true ? (
+                  ) : item.our_scope ? (
                     <Badge className="bg-success text-success-foreground text-xs">✓ Our Scope</Badge>
                   ) : (
                     <Badge variant="outline" className="text-xs">✗ No Scope</Badge>
@@ -187,10 +259,14 @@ export function SwhChecklistTab({ items, projectId, onRefresh }: SwhChecklistTab
       </Card>
 
       <AddChecklistItemDialog
-        open={showAddDialog}
-        onOpenChange={setShowAddDialog}
+        open={showAddDialog || !!editingItem}
+        onOpenChange={(open) => {
+          if (!open) setEditingItem(null)
+          setShowAddDialog(open && !editingItem)
+        }}
         projectId={projectId}
         nextSrNo={items.length + 1}
+        item={editingItem}
         onSuccess={onRefresh}
       />
     </>

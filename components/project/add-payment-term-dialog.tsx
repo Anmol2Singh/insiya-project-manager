@@ -1,8 +1,6 @@
 "use client"
 
-import React from "react"
-
-import { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
 import {
@@ -22,13 +20,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import type { PaymentTerm } from "@/lib/types"
 
 interface AddPaymentTermDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   projectId: string
   orderValue: number
-  existingTerms: any[]
+  existingTerms: PaymentTerm[]
+  term?: PaymentTerm | null
   onSuccess: () => void
 }
 
@@ -46,6 +46,7 @@ export function AddPaymentTermDialog({
   projectId, 
   orderValue,
   existingTerms,
+  term,
   onSuccess 
 }: AddPaymentTermDialogProps) {
   const [loading, setLoading] = useState(false)
@@ -57,34 +58,52 @@ export function AddPaymentTermDialog({
     remark: "",
   })
 
-  // Calculate total percentage from existing terms
-  const existingPercentageTotal = existingTerms.reduce((sum, term) => {
-    return sum + (term.term_percentage || 0)
-  }, 0)
+  useEffect(() => {
+    if (term) {
+      setFormData({
+        payment_term: term.payment_term || "",
+        term_percentage: term.term_percentage?.toString() || "",
+        amount: term.amount?.toString() || "",
+        received_amount: term.received_amount?.toString() || "",
+        remark: term.remark || "",
+      })
+    } else {
+      setFormData({
+        payment_term: "",
+        term_percentage: "",
+        amount: "",
+        received_amount: "",
+        remark: "",
+      })
+    }
+  }, [term, open])
+
+  // Calculate total percentage from existing terms excluding current editing term
+  const existingPercentageTotal = existingTerms
+    .filter((t) => !term || t.id !== term.id)
+    .reduce((sum, t) => sum + (t.term_percentage || 0), 0)
 
   // Calculate new total percentage if current value is entered
   const newPercentage = formData.term_percentage ? parseFloat(formData.term_percentage) : 0
   const totalPercentage = existingPercentageTotal + newPercentage
 
-  // Check if we can add more terms
+  // Check if we can add/edit terms
   const canAddMore = existingPercentageTotal < 100
 
   // Auto-update amount when percentage changes
   const handlePercentageChange = (value: string) => {
-    setFormData({ ...formData, term_percentage: value })
-    
-    // Auto-calculate amount based on percentage and order value
-    if (value && orderValue) {
-      const percentage = parseFloat(value)
-      const calculatedAmount = (percentage / 100) * orderValue
-      setFormData(prev => ({
-        ...prev,
-        term_percentage: value,
-        amount: calculatedAmount.toString()
-      }))
-    } else {
-      setFormData({ ...formData, term_percentage: value, amount: "" })
-    }
+    setFormData((prev) => {
+      if (value && orderValue) {
+        const percentage = parseFloat(value)
+        const calculatedAmount = (percentage / 100) * orderValue
+        return {
+          ...prev,
+          term_percentage: value,
+          amount: calculatedAmount.toString(),
+        }
+      }
+      return { ...prev, term_percentage: value, amount: "" }
+    })
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -105,7 +124,7 @@ export function AddPaymentTermDialog({
       const received = parseFloat(formData.received_amount) || 0
       const pending = amount - received
 
-      const { error } = await supabase.from("payment_terms").insert({
+      const payload = {
         project_id: projectId,
         payment_term: formData.payment_term,
         term_percentage: formData.term_percentage ? parseFloat(formData.term_percentage) : null,
@@ -113,23 +132,30 @@ export function AddPaymentTermDialog({
         received_amount: received || null,
         pending_amount: pending || null,
         remark: formData.remark || null,
-      })
+      }
 
-      if (error) throw error
+      if (term) {
+        const { error } = await supabase
+          .from("payment_terms")
+          .update(payload)
+          .eq("id", term.id)
 
-      setFormData({
-        payment_term: "",
-        term_percentage: "",
-        amount: "",
-        received_amount: "",
-        remark: "",
-      })
+        if (error) throw error
+        toast.success("Payment term updated successfully")
+      } else {
+        const { error } = await supabase
+          .from("payment_terms")
+          .insert(payload)
+
+        if (error) throw error
+        toast.success("Payment term added successfully")
+      }
 
       onSuccess()
       onOpenChange(false)
     } catch (error: any) {
-      console.error("Error adding payment term:", error)
-      toast.error(error.message || "Failed to add payment term")
+      console.error("Error saving payment term:", error)
+      toast.error(error.message || "Failed to save payment term")
     } finally {
       setLoading(false)
     }
@@ -139,7 +165,7 @@ export function AddPaymentTermDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Add Payment Term</DialogTitle>
+          <DialogTitle>{term ? "Edit Payment Term" : "Add Payment Term"}</DialogTitle>
         </DialogHeader>
         
         {!canAddMore && (
@@ -175,8 +201,8 @@ export function AddPaymentTermDialog({
                 <SelectValue placeholder="Select payment term" />
               </SelectTrigger>
               <SelectContent>
-                {PAYMENT_TERMS.map((term) => (
-                  <SelectItem key={term} value={term}>{term}</SelectItem>
+                {PAYMENT_TERMS.map((termItem, idx) => (
+                  <SelectItem key={`pay-term-${idx}-${termItem}`} value={termItem}>{termItem}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -246,9 +272,9 @@ export function AddPaymentTermDialog({
             <Button 
               type="submit" 
               disabled={loading || !formData.payment_term || !canAddMore || totalPercentage > 100}
-              className="bg-primary text-primary-foreground"
+              className="bg-primary text-primary-foreground font-bold"
             >
-              {loading ? "Adding..." : "Add Term"}
+              {loading ? (term ? "Saving..." : "Adding...") : (term ? "Save Changes" : "Add Term")}
             </Button>
           </div>
         </form>

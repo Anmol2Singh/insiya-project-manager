@@ -4,16 +4,20 @@ import { useState, useEffect } from "react"
 import useSWR from "swr"
 import { motion } from "framer-motion"
 import { createClient } from "@/lib/supabase/client"
+import { getActiveCompany } from "@/lib/company-store"
 import { DashboardHeader } from "@/components/dashboard/header"
 import { SummaryCards } from "@/components/dashboard/summary-cards"
 import { ProjectsTable } from "@/components/dashboard/projects-table"
 import type { ProjectSummary } from "@/lib/types"
 
-const fetcher = async (): Promise<ProjectSummary[]> => {
+const fetcher = async (companyId: string): Promise<ProjectSummary[]> => {
   const supabase = createClient()
+  const targetCompany = companyId || getActiveCompany().id || "insiya-solar"
+
   const { data, error } = await supabase
     .from("projects")
-    .select("*") // Temp select all to see what's available
+    .select("*")
+    .eq("company_id", targetCompany)
     .order("id_no", { ascending: false })
 
   if (error) {
@@ -21,7 +25,7 @@ const fetcher = async (): Promise<ProjectSummary[]> => {
     throw error
   }
 
-  const projects = (data || []).map(project => ({
+  const projects = (data || []).map((project: any) => ({
     ...project,
     balance: (project.order_value || 0) + (project.extra_work_value || 0) - (project.payment_received || 0)
   }))
@@ -31,78 +35,79 @@ const fetcher = async (): Promise<ProjectSummary[]> => {
 
 export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState("")
-  const { data: projects = [], error, isLoading } = useSWR("projects", fetcher)
+  const [activeCompanyId, setActiveCompanyId] = useState<string>("insiya-solar")
 
   useEffect(() => {
-    async function diagnostic() {
-      try {
-        const supabase = createClient()
-        const { data, error } = await supabase.from("projects").select("count").single()
-        console.log("Supabase diagnostic (projects count):", data, error)
-      } catch (e) {
-        console.error("Supabase diagnostic failure:", e)
+    setActiveCompanyId(getActiveCompany().id)
+    const handleStorage = () => {
+      const comp = getActiveCompany()
+      if (comp.id !== activeCompanyId) {
+        setActiveCompanyId(comp.id)
       }
     }
-    diagnostic()
-  }, [])
+    window.addEventListener("storage", handleStorage)
+    const interval = setInterval(handleStorage, 500)
+    return () => {
+      window.removeEventListener("storage", handleStorage)
+      clearInterval(interval)
+    }
+  }, [activeCompanyId])
+
+  const { data: projects = [], error, isLoading, mutate } = useSWR(
+    ["projects", activeCompanyId],
+    ([, compId]) => fetcher(compId)
+  )
 
   const filteredProjects = projects.filter((project) => {
-    const query = searchQuery.toLowerCase()
+    if (!project) return false
+    const query = (searchQuery || "").toLowerCase().trim()
+    if (!query) return true
+
+    const siteName = (project.site_name || "").toString().toLowerCase()
+    const mobileNo = (project.mobile_number || "").toString().toLowerCase()
+    const address = (project.address || "").toString().toLowerCase()
+    const orderType = (project.order_type || "").toString().toLowerCase()
+    const idNo = project.id_no != null ? String(project.id_no).toLowerCase() : ""
+    const workRemark = (project.work_remark || "").toString().toLowerCase()
+
     return (
-      project.site_name.toLowerCase().includes(query) ||
-      project.address.toLowerCase().includes(query) ||
-      project.order_type.toLowerCase().includes(query) ||
-      project.id_no.toString().includes(query)
+      siteName.includes(query) ||
+      mobileNo.includes(query) ||
+      address.includes(query) ||
+      orderType.includes(query) ||
+      idNo.includes(query) ||
+      workRemark.includes(query)
     )
   })
 
-  if (error) {
-    console.error("Dashboard SWR error:", error)
-    return (
-      <div className="min-h-screen bg-background text-foreground">
-        <DashboardHeader searchQuery={searchQuery} onSearchChange={setSearchQuery} />
-        <main className="p-4 lg:p-8">
-          <div className="max-w-[1600px] mx-auto">
-            <div className="bg-destructive/10 border border-destructive/20 rounded-2xl p-6 text-destructive flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-destructive/20 flex items-center justify-center font-bold">!</div>
-              <div>
-                <h3 className="font-bold">Error loading projects</h3>
-                <p className="text-sm opacity-80">
-                  {error.message || "Please check your connection and try again later."}
-                </p>
-              </div>
-            </div>
-          </div>
-        </main>
-      </div>
-    )
-  }
-
   return (
-    <div className="min-h-screen bg-background">
-      <DashboardHeader searchQuery={searchQuery} onSearchChange={setSearchQuery} />
+    <div className="min-h-screen bg-background text-foreground flex flex-col font-sans antialiased">
+      <DashboardHeader
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        onDatabaseImport={() => mutate()}
+      />
 
-      <main className="p-4 lg:p-8">
+      <main className="flex-1 px-4 py-6 lg:px-8 max-w-[1600px] w-full mx-auto space-y-6">
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
-          className="max-w-[1600px] mx-auto space-y-8"
+          transition={{ duration: 0.3 }}
         >
-          {isLoading ? (
-            <div className="space-y-8">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {[1, 2, 3, 4].map((i) => (
-                  <div key={i} className="h-32 bg-card rounded-2xl animate-pulse shadow-sm" />
-                ))}
-              </div>
-              <div className="h-[600px] bg-card rounded-2xl animate-pulse shadow-sm" />
-            </div>
-          ) : (
-            <>
-              <SummaryCards projects={filteredProjects} />
-              <ProjectsTable projects={filteredProjects} />
-            </>
-          )}
+          <SummaryCards projects={projects} isLoading={isLoading} />
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.1 }}
+        >
+          <ProjectsTable
+            projects={filteredProjects}
+            isLoading={isLoading}
+            error={error}
+            onMutate={() => mutate()}
+          />
         </motion.div>
       </main>
     </div>

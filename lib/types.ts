@@ -3,6 +3,7 @@ export interface Project {
   id_no: number
   order_type: string
   site_name: string
+  mobile_number?: string | null
   address: string
   hp_type: string | null
   hp_qty: number | null
@@ -15,6 +16,7 @@ export interface Project {
   extra_work_value: number
   payment_received: number
   work_remark: string | null
+  salesman_name?: string | null
   balance: number
   created_at: string
   updated_at: string
@@ -42,6 +44,7 @@ export interface LedgerEntry {
   invoice_no: string | null
   particulars: string | null
   bill_submitted: boolean
+  payment_receipt?: boolean | null
   sales_m_value: number
   m_outward_value: number
   order_value: number
@@ -97,8 +100,8 @@ export interface WorkRemark {
 }
 
 export type ProjectSummary = Pick<Project,
-  'id' | 'id_no' | 'order_type' | 'site_name' | 'address' |
+  'id' | 'id_no' | 'order_type' | 'site_name' | 'mobile_number' | 'address' |
   'sales_m_value' | 'm_outward_value' | 'm_balance' |
   'order_value' | 'extra_work_value' | 'payment_received' |
-  'work_remark' | 'balance'
+  'work_remark' | 'salesman_name' | 'balance' | 'created_at' | 'updated_at'
 >

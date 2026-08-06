@@ -15,6 +15,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import type { PaymentTerm } from "@/lib/types"
 import { AddPaymentTermDialog } from "./add-payment-term-dialog"
+import { createClient } from "@/lib/supabase/client"
+import { toast } from "sonner"
 
 interface PaymentTermsTabProps {
   terms: PaymentTerm[]
@@ -25,6 +27,8 @@ interface PaymentTermsTabProps {
 
 export function PaymentTermsTab({ terms, projectId, orderValue, onRefresh }: PaymentTermsTabProps) {
   const [showAddDialog, setShowAddDialog] = useState(false)
+  const [editingTerm, setEditingTerm] = useState<PaymentTerm | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const formatCurrency = (value: number | null) => {
     if (value === null) return "-"
@@ -34,6 +38,29 @@ export function PaymentTermsTab({ terms, projectId, orderValue, onRefresh }: Pay
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     }).format(value)
+  }
+
+  const handleDelete = async (termId: string) => {
+    if (!confirm("Are you sure you want to delete this payment term?")) return
+
+    setDeletingId(termId)
+    try {
+      const supabase = createClient()
+      const { error } = await supabase
+        .from("payment_terms")
+        .delete()
+        .eq("id", termId)
+
+      if (error) throw error
+
+      toast.success("Payment term deleted successfully")
+      onRefresh()
+    } catch (error: any) {
+      console.error("Error deleting payment term:", error)
+      toast.error(error.message || "Failed to delete payment term")
+    } finally {
+      setDeletingId(null)
+    }
   }
 
   // Calculate totals
@@ -65,7 +92,7 @@ export function PaymentTermsTab({ terms, projectId, orderValue, onRefresh }: Pay
               </div>
             </div>
           </div>
-          <Button size="sm" onClick={() => setShowAddDialog(true)} className="bg-primary text-primary-foreground">
+          <Button size="sm" onClick={() => { setEditingTerm(null); setShowAddDialog(true) }} className="bg-primary text-primary-foreground font-bold">
             <Plus className="h-4 w-4 mr-2" />
             Add Term
           </Button>
@@ -82,35 +109,56 @@ export function PaymentTermsTab({ terms, projectId, orderValue, onRefresh }: Pay
                   <TableHead className="font-semibold text-foreground text-right">Received</TableHead>
                   <TableHead className="font-semibold text-foreground text-right">Pending</TableHead>
                   <TableHead className="font-semibold text-foreground">Remark</TableHead>
+                  <TableHead className="font-semibold text-foreground text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {terms.map((term, index) => {
-                  const progressPct = term.amount && term.received_amount
-                    ? (term.received_amount / term.amount) * 100
-                    : 0
                   return (
-                    <TableRow key={term.id || `term-${index}`} className="hover:bg-muted/30">
+                    <TableRow key={term.id || `term-${index}`} className="hover:bg-muted/30 group">
                       <TableCell className="font-medium">{term.payment_term}</TableCell>
                       <TableCell className="text-right">
                         {term.term_percentage ? `${term.term_percentage}%` : "-"}
                       </TableCell>
                       <TableCell className="text-right">{formatCurrency(term.amount)}</TableCell>
-                      <TableCell className="text-right text-success">
+                      <TableCell className="text-right text-success font-medium">
                         {formatCurrency(term.received_amount)}
                       </TableCell>
-                      <TableCell className={`text-right ${(term.pending_amount || 0) > 0 ? "text-destructive" : ""}`}>
+                      <TableCell className={`text-right ${(term.pending_amount || 0) > 0 ? "text-destructive font-medium" : ""}`}>
                         {formatCurrency(term.pending_amount)}
                       </TableCell>
                       <TableCell className="max-w-[200px] truncate text-muted-foreground">
                         {term.remark || "-"}
+                      </TableCell>
+                      <TableCell className="text-right pr-2">
+                        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-primary hover:bg-primary/10"
+                            onClick={() => setEditingTerm(term)}
+                            title="Edit term"
+                          >
+                            <Edit2 className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                            onClick={() => handleDelete(term.id)}
+                            disabled={deletingId === term.id}
+                            title="Delete term"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   )
                 })}
                 {terms.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                       No payment terms defined
                     </TableCell>
                   </TableRow>
@@ -125,6 +173,7 @@ export function PaymentTermsTab({ terms, projectId, orderValue, onRefresh }: Pay
                     <TableCell className={`text-right ${totals.pending > 0 ? "text-destructive" : ""}`}>
                       {formatCurrency(totals.pending)}
                     </TableCell>
+                    <TableCell></TableCell>
                     <TableCell></TableCell>
                   </TableRow>
                 )}
@@ -142,9 +191,30 @@ export function PaymentTermsTab({ terms, projectId, orderValue, onRefresh }: Pay
                 <div key={term.id || `m-term-${index}`} className="p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <h4 className="font-medium text-foreground">{term.payment_term}</h4>
-                    {term.term_percentage && (
-                      <span className="text-sm text-muted-foreground">{term.term_percentage}%</span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {term.term_percentage && (
+                        <span className="text-sm text-muted-foreground">{term.term_percentage}%</span>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-primary"
+                        onClick={() => setEditingTerm(term)}
+                        title="Edit term"
+                      >
+                        <Edit2 className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-destructive"
+                        onClick={() => handleDelete(term.id)}
+                        disabled={deletingId === term.id}
+                        title="Delete term"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                   <Progress value={progressPct} className="h-2" />
                   <div className="grid grid-cols-3 gap-2 text-sm">
@@ -179,11 +249,15 @@ export function PaymentTermsTab({ terms, projectId, orderValue, onRefresh }: Pay
       </Card>
 
       <AddPaymentTermDialog
-        open={showAddDialog}
-        onOpenChange={setShowAddDialog}
+        open={showAddDialog || !!editingTerm}
+        onOpenChange={(open) => {
+          if (!open) setEditingTerm(null)
+          setShowAddDialog(open && !editingTerm)
+        }}
         projectId={projectId}
         orderValue={orderValue}
         existingTerms={terms}
+        term={editingTerm}
         onSuccess={onRefresh}
       />
     </>

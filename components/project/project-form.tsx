@@ -1,8 +1,9 @@
 "use client"
 
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
+import { getActiveCompany } from "@/lib/company-store"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,11 +16,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 import type { Project } from "@/lib/types"
 import { toast } from "sonner"
-import { LayoutGrid, Info, IndianRupee, MessageSquare, Save, X } from "lucide-react"
+import { LayoutGrid, Save, Plus, Trash2, Settings2, ChevronUp, ChevronDown, Edit2, Check, X } from "lucide-react"
 
-const ORDER_TYPES = [
+const DEFAULT_ORDER_TYPES = [
   "Boom Barrier",
   "Heat Pump",
   "Solar Water Heater",
@@ -28,7 +36,10 @@ const ORDER_TYPES = [
   "Other",
 ]
 
-const TANK_TYPES = ["GI Pressureized", "GI Non-Pressurized", "Enamel"]
+const DEFAULT_SALESMAN_OPTIONS = [
+  "Sales Person 1",
+  "Sales Person 2",
+]
 
 interface ProjectFormProps {
   project?: Project
@@ -40,10 +51,151 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Categories management state
+  const [categories, setCategories] = useState<string[]>(DEFAULT_ORDER_TYPES)
+  const [newCategoryName, setNewCategoryName] = useState("")
+  const [manageDialogOpen, setManageDialogOpen] = useState(false)
+
+  // Salesman management state
+  const [salesmanOptions, setSalesmanOptions] = useState<string[]>(DEFAULT_SALESMAN_OPTIONS)
+  const [manageSalesmanOpen, setManageSalesmanOpen] = useState(false)
+  const [newSalesmanName, setNewSalesmanName] = useState("")
+  const [editingSalesmanIdx, setEditingSalesmanIdx] = useState<number | null>(null)
+  const [editingSalesmanText, setEditingSalesmanText] = useState("")
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("order_categories")
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setCategories(parsed)
+        }
+      }
+
+      const storedSalesmen = localStorage.getItem("salesman_options")
+      if (storedSalesmen) {
+        const parsed = JSON.parse(storedSalesmen)
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setSalesmanOptions(parsed)
+        }
+      }
+    } catch (e) {
+      console.error("Error loading stored dropdown options:", e)
+    }
+  }, [])
+
+  const saveCategories = (updated: string[]) => {
+    setCategories(updated)
+    if (typeof window !== "undefined") {
+      localStorage.setItem("order_categories", JSON.stringify(updated))
+    }
+  }
+
+  const handleAddCategory = () => {
+    const trimmed = newCategoryName.trim()
+    if (!trimmed) return
+    if (categories.includes(trimmed)) {
+      toast.error("Category already exists")
+      return
+    }
+    const updated = [...categories, trimmed]
+    saveCategories(updated)
+    setNewCategoryName("")
+    toast.success(`Category "${trimmed}" added!`)
+  }
+
+  const handleRemoveCategory = (catToRemove: string) => {
+    if (categories.length <= 1) {
+      toast.error("Cannot remove all categories")
+      return
+    }
+    const updated = categories.filter((c) => c !== catToRemove)
+    saveCategories(updated)
+    if (formData.order_type === catToRemove) {
+      setFormData((prev) => ({ ...prev, order_type: updated[0] || "" }))
+    }
+    toast.success(`Category "${catToRemove}" removed`)
+  }
+
+  // Salesman Management Handlers
+  const saveSalesmanOptions = (updated: string[]) => {
+    setSalesmanOptions(updated)
+    if (typeof window !== "undefined") {
+      localStorage.setItem("salesman_options", JSON.stringify(updated))
+    }
+  }
+
+  const handleAddSalesman = () => {
+    const trimmed = newSalesmanName.trim()
+    if (!trimmed) return
+    if (salesmanOptions.includes(trimmed)) {
+      toast.error("Salesman already exists in list")
+      return
+    }
+    const updated = [...salesmanOptions, trimmed]
+    saveSalesmanOptions(updated)
+    setNewSalesmanName("")
+    toast.success(`Salesman "${trimmed}" added!`)
+  }
+
+  const handleRemoveSalesman = (nameToRemove: string) => {
+    if (salesmanOptions.length <= 1) {
+      toast.error("Cannot remove all salesmen from list")
+      return
+    }
+    const updated = salesmanOptions.filter((s) => s !== nameToRemove)
+    saveSalesmanOptions(updated)
+    if (formData.salesman_name === nameToRemove) {
+      setFormData((prev) => ({ ...prev, salesman_name: updated[0] || "" }))
+    }
+    toast.success(`Salesman "${nameToRemove}" removed`)
+  }
+
+  const handleStartEditSalesman = (idx: number, currentText: string) => {
+    setEditingSalesmanIdx(idx)
+    setEditingSalesmanText(currentText)
+  }
+
+  const handleSaveEditSalesman = (idx: number) => {
+    const trimmed = editingSalesmanText.trim()
+    if (!trimmed) return
+    const updated = [...salesmanOptions]
+    const oldName = updated[idx]
+    updated[idx] = trimmed
+    saveSalesmanOptions(updated)
+    if (formData.salesman_name === oldName) {
+      setFormData((prev) => ({ ...prev, salesman_name: trimmed }))
+    }
+    setEditingSalesmanIdx(null)
+    setEditingSalesmanText("")
+    toast.success("Salesman name updated")
+  }
+
+  const handleMoveUpSalesman = (idx: number) => {
+    if (idx === 0) return
+    const updated = [...salesmanOptions]
+    const temp = updated[idx - 1]
+    updated[idx - 1] = updated[idx]
+    updated[idx] = temp
+    saveSalesmanOptions(updated)
+  }
+
+  const handleMoveDownSalesman = (idx: number) => {
+    if (idx === salesmanOptions.length - 1) return
+    const updated = [...salesmanOptions]
+    const temp = updated[idx + 1]
+    updated[idx + 1] = updated[idx]
+    updated[idx] = temp
+    saveSalesmanOptions(updated)
+  }
+
   const [formData, setFormData] = useState({
     id_no: project?.id_no?.toString() || "",
     order_type: project?.order_type || "",
+    salesman_name: project?.salesman_name || "",
     site_name: project?.site_name || "",
+    mobile_number: project?.mobile_number || "",
     address: project?.address || "",
     hp_type: project?.hp_type || "",
     hp_qty: project?.hp_qty?.toString() || "",
@@ -61,10 +213,13 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
     try {
       const supabase = createClient()
 
+      const activeCompany = getActiveCompany()
       const projectData = {
         id_no: parseInt(formData.id_no) || 0,
         order_type: formData.order_type,
+        salesman_name: formData.salesman_name || null,
         site_name: formData.site_name,
+        mobile_number: formData.mobile_number || null,
         address: formData.address,
         hp_type: formData.hp_type || null,
         hp_qty: formData.hp_qty ? parseInt(formData.hp_qty) : null,
@@ -72,6 +227,7 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
         tank_qty: formData.tank_qty ? parseInt(formData.tank_qty) : null,
         order_value: parseFloat(formData.order_value) || 0,
         work_remark: formData.work_remark || null,
+        company_id: activeCompany.id,
       }
 
       if (mode === "create") {
@@ -106,6 +262,10 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
     }
   }
 
+  const displaySalesmanOptions = formData.salesman_name && !salesmanOptions.includes(formData.salesman_name)
+    ? [formData.salesman_name, ...salesmanOptions]
+    : salesmanOptions
+
   return (
     <Card className="border-0 shadow-2xl bg-card/60 backdrop-blur-xl rounded-3xl overflow-hidden mb-12">
       <CardHeader className="bg-primary/5 pb-8 border-b">
@@ -120,7 +280,7 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
         <form onSubmit={handleSubmit} className="space-y-10">
           {error && (
             <div className="bg-destructive/10 border border-destructive/20 rounded-2xl p-4 text-destructive text-sm font-medium flex items-center gap-2">
-              <div className="h-5 w-5 rounded-full bg-destructive flex items-center justify-center text-white text-[10px font-extrabold] font-bold">!</div>
+              <div className="h-5 w-5 rounded-full bg-destructive flex items-center justify-center text-white text-[10px] font-extrabold font-bold">!</div>
               {error}
             </div>
           )}
@@ -132,7 +292,7 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
               <h3 className="font-bold text-foreground uppercase text-xs tracking-widest">Site Information</h3>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-2">
                 <Label htmlFor="id_no" className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">Project ID</Label>
                 <Input
@@ -147,7 +307,63 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="order_type" className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">Order Category</Label>
+                <div className="flex justify-between items-center">
+                  <Label htmlFor="order_type" className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">Order Category</Label>
+                  
+                  {/* Category Manager Dialog Button */}
+                  <Dialog open={manageDialogOpen} onOpenChange={setManageDialogOpen}>
+                    <DialogTrigger asChild>
+                      <button
+                        type="button"
+                        className="text-xs text-primary hover:underline font-semibold flex items-center gap-1"
+                      >
+                        <Settings2 className="h-3 w-3" /> Add/Remove
+                      </button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-md">
+                      <DialogHeader>
+                        <DialogTitle className="text-lg font-bold">Manage Order Categories</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4 py-2">
+                        <div className="flex gap-2">
+                          <Input
+                            placeholder="New Category Name..."
+                            value={newCategoryName}
+                            onChange={(e) => setNewCategoryName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault()
+                                handleAddCategory()
+                              }
+                            }}
+                            className="rounded-xl"
+                          />
+                          <Button type="button" onClick={handleAddCategory} className="rounded-xl font-bold">
+                            <Plus className="h-4 w-4 mr-1" /> Add
+                          </Button>
+                        </div>
+                        <div className="space-y-2 max-h-60 overflow-y-auto border rounded-2xl p-3 bg-muted/30">
+                          {categories.filter(Boolean).map((cat, idx) => (
+                            <div key={`manage-cat-${idx}-${cat}`} className="flex justify-between items-center bg-card p-2.5 rounded-xl border border-border">
+                              <span className="text-sm font-semibold">{cat}</span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleRemoveCategory(cat)}
+                                className="text-destructive hover:bg-destructive/10 h-8 w-8 p-0 rounded-lg"
+                                title="Remove Category"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+
                 <Select
                   value={formData.order_type}
                   onValueChange={(value) => setFormData({ ...formData, order_type: value })}
@@ -156,24 +372,73 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
                     <SelectValue placeholder="Select type" />
                   </SelectTrigger>
                   <SelectContent className="rounded-xl border-border/50 shadow-xl">
-                    {ORDER_TYPES.map((type) => (
-                      <SelectItem key={type} value={type} className="rounded-lg">{type}</SelectItem>
+                    {categories.filter(Boolean).map((type, idx) => (
+                      <SelectItem key={`order-type-${idx}-${type}`} value={type} className="rounded-lg">{type}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Salesman Name Field */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <Label htmlFor="salesman_name" className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">
+                    Sales Man Name
+                  </Label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setManageSalesmanOpen(true)
+                      setEditingSalesmanIdx(null)
+                      setNewSalesmanName("")
+                    }}
+                    className="text-xs text-primary hover:underline font-semibold flex items-center gap-1"
+                  >
+                    <Settings2 className="h-3 w-3" /> Edit Dropdown List
+                  </button>
+                </div>
+
+                <Select
+                  value={formData.salesman_name}
+                  onValueChange={(value) => setFormData({ ...formData, salesman_name: value })}
+                >
+                  <SelectTrigger className="rounded-xl h-12 bg-muted/30 border-border/50 focus:bg-background transition-all">
+                    <SelectValue placeholder="Select Sales Man" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl border-border/50 shadow-xl">
+                    {displaySalesmanOptions.filter(Boolean).map((name, idx) => (
+                      <SelectItem key={`salesman-${idx}-${name}`} value={name} className="rounded-lg">
+                        {name}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="site_name" className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">Official Site Name</Label>
-              <Input
-                id="site_name"
-                value={formData.site_name}
-                onChange={(e) => setFormData({ ...formData, site_name: e.target.value })}
-                placeholder="e.g., Eastern Elegance Hadapsar"
-                className="rounded-xl h-12 bg-muted/30 border-border/50 focus:bg-background transition-all"
-                required
-              />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <Label htmlFor="site_name" className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">Official Site Name / Customer</Label>
+                <Input
+                  id="site_name"
+                  value={formData.site_name}
+                  onChange={(e) => setFormData({ ...formData, site_name: e.target.value })}
+                  placeholder="e.g., Eastern Elegance Hadapsar"
+                  className="rounded-xl h-12 bg-muted/30 border-border/50 focus:bg-background transition-all"
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="mobile_number" className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">Mobile Number</Label>
+                <Input
+                  id="mobile_number"
+                  value={formData.mobile_number}
+                  onChange={(e) => setFormData({ ...formData, mobile_number: e.target.value })}
+                  placeholder="e.g., +91 9876543210"
+                  className="rounded-xl h-12 bg-muted/30 border-border/50 focus:bg-background transition-all"
+                />
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -221,19 +486,14 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
 
               <div className="space-y-2">
                 <Label htmlFor="tank_type" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground ml-1">Tank Type</Label>
-                <Select
+                <Input
+                  id="tank_type"
+                  type="text"
+                  placeholder="Enter tank type"
                   value={formData.tank_type}
-                  onValueChange={(value) => setFormData({ ...formData, tank_type: value })}
-                >
-                  <SelectTrigger id="tank_type" className="rounded-xl bg-background border-border/30 h-11">
-                    <SelectValue placeholder="Select type" />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-xl border-border/50 shadow-xl">
-                    {TANK_TYPES.map((type) => (
-                      <SelectItem key={type} value={type} className="rounded-lg">{type}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  onChange={(e) => setFormData({ ...formData, tank_type: e.target.value })}
+                  className="rounded-xl bg-background border-border/30 h-11"
+                />
               </div>
 
               <div className="space-y-2">
@@ -249,35 +509,10 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
             </div>
           </section>
 
-          {/* Financial */}
-          <section className="space-y-6">
-            <div className="flex items-center gap-3">
-              <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center font-bold text-xs text-muted-foreground border border-border/50">3</div>
-              <h3 className="font-bold text-foreground uppercase text-xs tracking-widest">Financial Framework</h3>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="order_value" className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">Total Order Value (INR)</Label>
-              <div className="relative group">
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-primary group-focus-within:scale-110 transition-transform">₹</div>
-                <Input
-                  id="order_value"
-                  type="number"
-                  step="0.01"
-                  value={formData.order_value}
-                  onChange={(e) => setFormData({ ...formData, order_value: e.target.value })}
-                  placeholder="0.00"
-                  className="pl-10 rounded-xl h-14 bg-muted/30 border-border/50 focus:bg-background transition-all text-lg font-bold"
-                  required
-                />
-              </div>
-            </div>
-          </section>
-
           {/* Work Remark */}
           <section className="space-y-6">
             <div className="flex items-center gap-3">
-              <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center font-bold text-xs text-muted-foreground border border-border/50">4</div>
+              <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center font-bold text-xs text-muted-foreground border border-border/50">3</div>
               <h3 className="font-bold text-foreground uppercase text-xs tracking-widest">Operational Remarks</h3>
             </div>
 
@@ -324,6 +559,131 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
           </div>
         </form>
       </CardContent>
+
+      {/* Manage Salesmen Dialog */}
+      <Dialog open={manageSalesmanOpen} onOpenChange={setManageSalesmanOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Settings2 className="h-5 w-5 text-primary" />
+              Manage Sales Man List
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="flex gap-2">
+              <Input
+                placeholder="New Sales Man Name..."
+                value={newSalesmanName}
+                onChange={(e) => setNewSalesmanName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault()
+                    handleAddSalesman()
+                  }
+                }}
+                className="rounded-xl"
+              />
+              <Button type="button" onClick={handleAddSalesman} className="rounded-xl font-bold">
+                <Plus className="h-4 w-4 mr-1" /> Add
+              </Button>
+            </div>
+            <div className="space-y-2 max-h-60 overflow-y-auto border rounded-2xl p-3 bg-muted/30">
+              {salesmanOptions.filter(Boolean).map((name, idx) => (
+                <div key={`manage-sm-${idx}-${name}`} className="flex justify-between items-center bg-card p-2.5 rounded-xl border border-border">
+                  {editingSalesmanIdx === idx ? (
+                    <div className="flex items-center gap-2 flex-1 mr-2">
+                      <Input
+                        value={editingSalesmanText}
+                        onChange={(e) => setEditingSalesmanText(e.target.value)}
+                        className="h-8 text-sm"
+                        autoFocus
+                      />
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => handleSaveEditSalesman(idx)}
+                        className="h-7 w-7 text-success"
+                        title="Save"
+                      >
+                        <Check className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => setEditingSalesmanIdx(null)}
+                        className="h-7 w-7 text-muted-foreground"
+                        title="Cancel"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      <span className="text-sm font-semibold truncate max-w-[180px]">{name}</span>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          disabled={idx === 0}
+                          onClick={() => handleMoveUpSalesman(idx)}
+                          className="h-7 w-7 rounded-lg"
+                          title="Move Up"
+                        >
+                          <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          disabled={idx === salesmanOptions.length - 1}
+                          onClick={() => handleMoveDownSalesman(idx)}
+                          className="h-7 w-7 rounded-lg"
+                          title="Move Down"
+                        >
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleStartEditSalesman(idx, name)}
+                          className="h-7 w-7 rounded-lg text-primary hover:bg-primary/10"
+                          title="Edit Name"
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleRemoveSalesman(name)}
+                          className="h-7 w-7 rounded-lg text-destructive hover:bg-destructive/10"
+                          title="Remove Salesman"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setManageSalesmanOpen(false)}
+                className="rounded-xl font-bold"
+              >
+                Done
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }

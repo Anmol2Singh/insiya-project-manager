@@ -2,11 +2,12 @@
 
 import Link from "next/link"
 import { useState } from "react"
-import { ArrowLeft, Edit, Phone, Trash2 } from "lucide-react"
+import { ArrowLeft, Edit, Phone, Trash2, CopyPlus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import type { Project } from "@/lib/types"
 import { DeleteProjectDialog } from "./delete-project-dialog"
+import { MoveCopyCustomerDialog } from "./move-copy-customer-dialog"
 
 interface ProjectHeaderProps {
   project: Project
@@ -14,6 +15,7 @@ interface ProjectHeaderProps {
 
 export function ProjectHeader({ project }: ProjectHeaderProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [showMoveCopyDialog, setShowMoveCopyDialog] = useState(false)
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("en-IN", {
@@ -34,15 +36,26 @@ export function ProjectHeader({ project }: ProjectHeaderProps) {
               Back
             </Button>
           </Link>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-destructive hover:text-destructive hover:bg-destructive/10"
-            onClick={() => setShowDeleteDialog(true)}
-          >
-            <Trash2 className="h-4 w-4 mr-2" />
-            Delete Project
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-primary border-primary/20 hover:bg-primary/10 font-bold"
+              onClick={() => setShowMoveCopyDialog(true)}
+            >
+              <CopyPlus className="h-4 w-4 mr-2" />
+              Move / Copy Customer
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+              onClick={() => setShowDeleteDialog(true)}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete Project
+            </Button>
+          </div>
         </div>
 
         <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
@@ -51,6 +64,11 @@ export function ProjectHeader({ project }: ProjectHeaderProps) {
               <Badge variant="secondary" className="bg-secondary text-secondary-foreground font-medium">
                 {project.order_type}
               </Badge>
+              {project.salesman_name && (
+                <Badge variant="outline" className="bg-primary/10 border-primary/30 text-primary font-semibold">
+                  Sales Man: {project.salesman_name}
+                </Badge>
+              )}
               <span className="text-sm text-muted-foreground font-medium">ID: {project.id_no}</span>
             </div>
             <h1 className="text-2xl font-bold text-foreground lg:text-3xl tracking-tight">
@@ -59,14 +77,14 @@ export function ProjectHeader({ project }: ProjectHeaderProps) {
             <p className="text-muted-foreground mt-1 max-w-2xl">{project.address}</p>
 
             {/* Equipment Info */}
-            {(project.hp_type || project.hp_qty || project.tank_type || project.tank_qty) && (
+            {Boolean(project.hp_type || project.hp_qty || project.tank_type || project.tank_qty) && (
               <div className="flex flex-wrap gap-2 mt-4">
                 {project.hp_type && (
                   <Badge variant="outline" className="bg-accent/30 border-accent/50 text-accent-foreground px-2.5 py-0.5 rounded-full text-xs font-semibold">
                     HP: {project.hp_type}
                   </Badge>
                 )}
-                {project.hp_qty && (
+                {(project.hp_qty ?? 0) > 0 && (
                   <Badge variant="outline" className="bg-accent/30 border-accent/50 text-accent-foreground px-2.5 py-0.5 rounded-full text-xs font-semibold">
                     Qty: {project.hp_qty}
                   </Badge>
@@ -76,7 +94,7 @@ export function ProjectHeader({ project }: ProjectHeaderProps) {
                     Tank Type: {project.tank_type}
                   </Badge>
                 )}
-                {project.tank_qty && (
+                {(project.tank_qty ?? 0) > 0 && (
                   <Badge variant="outline" className="bg-accent/30 border-accent/50 text-accent-foreground px-2.5 py-0.5 rounded-full text-xs font-semibold">
                     Tank: {project.tank_qty}
                   </Badge>
@@ -102,10 +120,14 @@ export function ProjectHeader({ project }: ProjectHeaderProps) {
             </div>
 
             {/* Quick Stats */}
-            <div className="grid grid-cols-3 gap-6 mt-2 p-4 bg-muted/40 rounded-xl border border-border/50">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6 mt-2 p-4 bg-muted/40 rounded-xl border border-border/50">
               <div className="text-left lg:text-right">
                 <p className="text-muted-foreground text-[10px] uppercase font-bold tracking-wider mb-1">Order Value</p>
                 <p className="font-bold text-base text-foreground underline decoration-primary/30 decoration-2 underline-offset-4">{formatCurrency(project.order_value)}</p>
+              </div>
+              <div className="text-left lg:text-right">
+                <p className="text-muted-foreground text-[10px] uppercase font-bold tracking-wider mb-1">Extra Work</p>
+                <p className="font-bold text-base text-warning-foreground underline decoration-warning/30 decoration-2 underline-offset-4">{formatCurrency(project.extra_work_value || 0)}</p>
               </div>
               <div className="text-left lg:text-right">
                 <p className="text-muted-foreground text-[10px] uppercase font-bold tracking-wider mb-1">Received</p>
@@ -127,6 +149,12 @@ export function ProjectHeader({ project }: ProjectHeaderProps) {
         onOpenChange={setShowDeleteDialog}
         projectId={project.id}
         siteName={project.site_name}
+      />
+
+      <MoveCopyCustomerDialog
+        open={showMoveCopyDialog}
+        onOpenChange={setShowMoveCopyDialog}
+        project={project}
       />
     </header>
   )
