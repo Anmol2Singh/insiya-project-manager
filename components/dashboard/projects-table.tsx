@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { motion, AnimatePresence } from "framer-motion"
 import jsPDF from "jspdf"
@@ -44,6 +44,7 @@ import type { ProjectSummary, CallingRecord } from "@/lib/types"
 import { ImportExcelDialog } from "./import-excel-dialog"
 import { getActiveCompany } from "@/lib/company-store"
 import { createClient } from "@/lib/supabase/client"
+import { hasEditPermission } from "@/lib/auth-store"
 import { toast } from "sonner"
 
 interface ProjectsTableProps {
@@ -78,6 +79,12 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  
+  const [canEdit, setCanEdit] = useState(false)
+  
+  useEffect(() => {
+    setCanEdit(hasEditPermission())
+  }, [])
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
@@ -256,13 +263,15 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
     doc.setFont("helvetica", "normal")
     doc.text(`Generated Date: ${new Date().toLocaleDateString("en-IN")}`, 14, 25)
 
-    const tableHeaders = ["S No.", "Customer Name", "Mobile No.", "ID", "Type", "Sales Man", "City / Locality", "Order Value", "Extra Work", "Payment Recd", "Balance", "Remark"]
+    const tableHeaders = ["S No.", "Customer Name", "Mobile No.", "ID", "Type", "Firm Name", "Party Print", "Sales Man", "City / Locality", "Order Value", "Extra Work", "Payment Recd", "Balance", "Remark"]
     const tableRows = sortedProjects.map((p, idx) => [
       idx + 1,
       p.site_name,
       p.mobile_number || "-",
       p.id_no,
       p.order_type,
+      p.firm_name || "-",
+      p.party_print_name || "-",
       p.salesman_name || "-",
       extractCityName(p.address),
       formatPdfCurrency(p.order_value),
@@ -294,17 +303,19 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
       },
       columnStyles: {
         0: { cellWidth: 10, halign: "center" },
-        1: { cellWidth: 50, fontStyle: "bold", fontSize: 8.5, textColor: [0, 0, 0] }, // Customer Name
-        2: { cellWidth: 22, halign: "center" }, // Mobile No.
-        3: { cellWidth: 11, halign: "center" },
-        4: { cellWidth: 20 },
-        5: { cellWidth: 20 }, // Sales Man
-        6: { cellWidth: 22 },
-        7: { cellWidth: 21, halign: "right" },
-        8: { cellWidth: 18, halign: "right" },
-        9: { cellWidth: 21, halign: "right" },
-        10: { cellWidth: 21, halign: "right", fontStyle: "bold" },
-        11: { cellWidth: "auto" },
+        1: { cellWidth: 40, fontStyle: "bold", fontSize: 8.5, textColor: [0, 0, 0] }, // Customer Name
+        2: { cellWidth: 20, halign: "center" }, // Mobile No.
+        3: { cellWidth: 10, halign: "center" }, // ID
+        4: { cellWidth: 15 }, // Type
+        5: { cellWidth: 18 }, // Firm Name
+        6: { cellWidth: 18 }, // Party Print
+        7: { cellWidth: 18 }, // Sales Man
+        8: { cellWidth: 20 }, // City
+        9: { cellWidth: 18, halign: "right" },
+        10: { cellWidth: 16, halign: "right" },
+        11: { cellWidth: 18, halign: "right" },
+        12: { cellWidth: 18, halign: "right", fontStyle: "bold" },
+        13: { cellWidth: "auto" },
       },
     })
 
@@ -343,9 +354,13 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
         "Customer Creation Date": formatDate(p.created_at),
         "Account Clearance Date": clearanceDate,
         "Customer ID": p.id_no,
-        "Order Type": p.order_type,
+        "Item Group": p.order_type,
+        "Item Name": p.hp_type || "-",
+        "Item Qty": p.hp_qty || 0,
         "Sales Man Name": p.salesman_name || "-",
         "Customer / Site Name": p.site_name,
+        "Firm Name": p.firm_name || "-",
+        "Party Print Name": p.party_print_name || "-",
         "Mobile Number": p.mobile_number || "-",
         "Address": p.address,
         "Order Value (Rs)": p.order_value,
@@ -399,15 +414,19 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
               <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 px-3 py-1.5 font-bold text-xs mr-1">
                 {projects.length} Total
               </Badge>
-              {selectedIds.size > 0 && (
+              {canEdit && (
                 <Button
                   variant="destructive"
                   size="sm"
+                  className={`font-bold h-10 px-4 rounded-xl shadow-lg transition-all ${
+                    selectedIds.size > 0 
+                      ? "opacity-100 translate-y-0" 
+                      : "opacity-0 translate-y-2 pointer-events-none absolute"
+                  }`}
                   onClick={() => setDeleteConfirmOpen(true)}
-                  className="font-bold text-xs h-9 rounded-xl shadow-sm animate-pulse"
                 >
-                  <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-                  Delete {selectedIds.size} Selected
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Selected ({selectedIds.size})
                 </Button>
               )}
               <Link href="/filter">
@@ -430,24 +449,28 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
                 <FileText className="h-3.5 w-3.5 mr-1.5 text-destructive" />
                 Generate PDF
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleExportExcel}
-                className="bg-card text-foreground hover:bg-success/10 hover:text-success font-bold text-xs h-9 rounded-xl border-border/80 shadow-sm"
-              >
-                <FileSpreadsheet className="h-3.5 w-3.5 mr-1.5 text-success" />
-                Export to Excel
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setImportDialogOpen(true)}
-                className="bg-primary/10 text-primary hover:bg-primary/20 font-bold text-xs h-9 rounded-xl border-primary/20 shadow-sm"
-              >
-                <Upload className="h-3.5 w-3.5 mr-1.5" />
-                Import Excel
-              </Button>
+              {canEdit && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExportExcel}
+                    className="bg-card text-foreground hover:bg-success/10 hover:text-success font-bold text-xs h-9 rounded-xl border-border/80 shadow-sm"
+                  >
+                    <FileSpreadsheet className="h-3.5 w-3.5 mr-1.5 text-success" />
+                    Export to Excel
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setImportDialogOpen(true)}
+                    className="bg-primary/10 text-primary hover:bg-primary/20 font-bold text-xs h-9 rounded-xl border-primary/20 shadow-sm"
+                  >
+                    <Upload className="h-3.5 w-3.5 mr-1.5" />
+                    Import Excel
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </CardHeader>
@@ -455,14 +478,18 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
           {/* Desktop Table */}
           <div className="hidden lg:block overflow-x-auto">
             <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/50 hover:bg-muted/50 border-b">
-                  <TableHead
-                    className="cursor-pointer font-bold text-foreground uppercase text-[10px] tracking-widest py-4"
-                    onClick={() => handleSort("id_no")}
-                  >
-                    ID <SortIcon field="id_no" />
-                  </TableHead>
+              <TableHeader className="bg-muted/50 sticky top-0 backdrop-blur-xl z-10 shadow-sm">
+                <TableRow className="border-b-border/50 hover:bg-transparent">
+                  {canEdit && (
+                    <TableHead className="w-[40px] pl-6 rounded-tl-xl">
+                      <Checkbox
+                        checked={selectedIds.size === sortedProjects.length && sortedProjects.length > 0}
+                        onCheckedChange={toggleSelectAll}
+                        className="border-primary/50 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground transition-all rounded-md"
+                      />
+                    </TableHead>
+                  )}
+                  <TableHead className={`whitespace-nowrap font-bold text-xs uppercase tracking-wider text-muted-foreground ${!canEdit ? 'pl-6 rounded-tl-xl' : ''}`}>ID</TableHead>
                   <TableHead className="font-bold text-foreground uppercase text-[10px] tracking-widest py-4">Type</TableHead>
                   <TableHead
                     className="cursor-pointer font-bold text-foreground uppercase text-[10px] tracking-widest py-4"
@@ -493,24 +520,30 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
                   >
                     Balance <SortIcon field="balance" />
                   </TableHead>
-                  <TableHead className="w-10 py-4">
-                <Checkbox
-                  checked={sortedProjects.length > 0 && selectedIds.size === sortedProjects.length}
-                  onCheckedChange={toggleSelectAll}
-                  aria-label="Select all customers"
-                />
-              </TableHead>
-              <TableHead className="text-center font-bold text-foreground uppercase text-[10px] tracking-widest py-4">Action</TableHead>
+                  <TableHead className="text-center font-bold text-foreground uppercase text-[10px] tracking-widest py-4">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 <AnimatePresence mode="popLayout">
                   {sortedProjects.map((project, index) => (
-                    <tr
+                    <motion.tr
                       key={project.id || `proj-${index}`}
-                      className="hover:bg-muted/40 group border-b last:border-0 transition-colors"
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      transition={{ duration: 0.2 }}
+                      className="group border-b-border/50 hover:bg-muted/40 transition-colors data-[state=selected]:bg-primary/5 cursor-pointer"
                     >
-                      <TableCell className="font-bold text-muted-foreground">{project.id_no}</TableCell>
+                      {canEdit && (
+                        <TableCell className="pl-6" onClick={(e) => e.stopPropagation()}>
+                          <Checkbox
+                            checked={selectedIds.has(project.id)}
+                            onCheckedChange={() => toggleSelect(project.id)}
+                            className="border-primary/30 data-[state=checked]:bg-primary transition-all rounded-md"
+                          />
+                        </TableCell>
+                      )}
+                      <TableCell className={`font-bold text-muted-foreground ${!canEdit ? 'pl-6' : ''}`}>{project.id_no}</TableCell>
                       <TableCell>
                         <Badge variant="secondary" className="bg-secondary/50 text-secondary-foreground font-bold text-[10px] uppercase px-2 h-5">
                           {project.order_type}
@@ -538,13 +571,6 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
                         }`}>
                         {formatCurrency(project.balance)}
                       </TableCell>
-                      <TableCell className="w-10">
-                        <Checkbox
-                          checked={selectedIds.has(project.id)}
-                          onCheckedChange={() => toggleSelect(project.id)}
-                          aria-label={`Select ${project.site_name}`}
-                        />
-                      </TableCell>
                       <TableCell className="text-center">
                         <Link href={`/projects/${project.id}`}>
                           <Button variant="ghost" size="sm" className="text-primary hover:text-primary hover:bg-primary/10 rounded-full font-bold text-xs">
@@ -553,7 +579,7 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
                           </Button>
                         </Link>
                       </TableCell>
-                    </tr>
+                    </motion.tr>
                   ))}
                 </AnimatePresence>
                 {sortedProjects.length === 0 && (

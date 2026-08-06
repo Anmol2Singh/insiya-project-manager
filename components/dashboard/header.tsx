@@ -45,6 +45,9 @@ import {
   deleteCompany,
   type Company,
 } from "@/lib/company-store"
+import { clearSession, isAdmin, hasEditPermission } from "@/lib/auth-store"
+import { ChangeCredentialsDialog } from "@/components/auth/change-credentials-dialog"
+import { ManageUsersDialog } from "@/components/auth/manage-users-dialog"
 import { toast } from "sonner"
 
 interface DashboardHeaderProps {
@@ -61,12 +64,20 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [addCompanyOpen, setAddCompanyOpen] = useState(false)
+  const [changeCredsOpen, setChangeCredsOpen] = useState(false)
+  const [manageUsersOpen, setManageUsersOpen] = useState(false)
   const [newCompanyName, setNewCompanyName] = useState("")
   const [newCompanyTagline, setNewCompanyTagline] = useState("")
+  const [mounted, setMounted] = useState(false)
+  const [isAdminUser, setIsAdminUser] = useState(false)
+  const [canEdit, setCanEdit] = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
+    setMounted(true)
+    setIsAdminUser(isAdmin())
+    setCanEdit(hasEditPermission())
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem("custom_save_location")
       if (stored) setSaveFolder(stored)
@@ -139,6 +150,13 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
     } catch (e: any) {
       console.error("Set save folder error:", e)
       toast.error("Could not set save folder location")
+    }
+  }
+
+  const handleLogout = () => {
+    if (confirm("Are you sure you want to logout?")) {
+      clearSession()
+      window.location.href = "/login"
     }
   }
 
@@ -366,54 +384,48 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
           {/* Company Switcher Dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="flex items-center gap-3 text-left group focus:outline-none p-1.5 rounded-2xl hover:bg-muted/50 transition-colors">
-                <div className="h-10 w-10 bg-primary rounded-full shadow-lg shadow-primary/25 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
-                  <Building2 className="h-5 w-5 text-white" />
+              <Button variant="ghost" className="h-[3.25rem] px-2 pl-1 font-bold hover:bg-muted/50 rounded-2xl gap-3 active:scale-95 transition-all w-fit flex items-center">
+                <div className="h-10 w-10 rounded-full bg-primary flex items-center justify-center shrink-0 shadow-sm">
+                  <Building2 className="h-5 w-5 text-primary-foreground" />
                 </div>
-                <div className="hidden sm:block">
-                  <div className="flex items-center gap-1.5">
-                    <h1 className="text-lg font-extrabold text-foreground tracking-tight leading-none">
-                      {activeCompany.name}
-                    </h1>
-                    <ChevronDown className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
-                  </div>
-                  <p className="text-[10px] text-primary font-bold uppercase tracking-widest mt-1">
-                    {activeCompany.tagline || "Project Manager"}
-                  </p>
+                <div className="flex flex-col items-start gap-0.5 max-w-[200px] sm:max-w-[300px]">
+                  <span className="text-base sm:text-lg font-extrabold truncate w-full leading-tight text-foreground">
+                    {mounted ? activeCompany.name : "Loading..."}
+                  </span>
+                  <span className="text-[9px] sm:text-[10px] uppercase tracking-wider text-primary font-bold truncate w-full leading-tight">
+                    {mounted && activeCompany.tagline ? activeCompany.tagline : "SOLAR & HEAT PUMP PROJECT MANAGER"}
+                  </span>
                 </div>
-              </button>
+                <ChevronDown className="h-4 w-4 text-muted-foreground opacity-50 shrink-0 ml-1" />
+              </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-72 rounded-2xl p-2 shadow-2xl border-border/50">
-              <DropdownMenuLabel className="text-xs uppercase tracking-wider text-muted-foreground px-3 py-2 font-bold">
-                Select Company Database
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {companies.map((comp, idx) => {
-                const isSelected = comp.id === activeCompany.id
-                return (
+            <DropdownMenuContent align="start" className="w-64 rounded-2xl p-2 shadow-xl border-border/50 bg-card/95 backdrop-blur-xl">
+              <DropdownMenuLabel className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-2 py-1.5">Switch Database</DropdownMenuLabel>
+              <DropdownMenuSeparator className="bg-border/50" />
+              {mounted && companies.map((comp, idx) => (
+                <DropdownMenuItem
+                  key={comp.id || `menu-comp-${idx}`}
+                  onClick={() => handleSelectCompany(comp)}
+                  className={`rounded-xl cursor-pointer p-2 mb-1 ${activeCompany.id === comp.id ? 'bg-primary/10 text-primary focus:bg-primary/15' : 'hover:bg-muted focus:bg-muted'}`}
+                >
+                  <div className="flex flex-col gap-0.5">
+                    <span className="font-bold">{comp.name}</span>
+                    <span className="text-[10px] opacity-70 leading-none">{comp.tagline || 'Project Manager'}</span>
+                  </div>
+                </DropdownMenuItem>
+              ))}
+              {isAdminUser && (
+                <>
+                  <DropdownMenuSeparator className="bg-border/50" />
                   <DropdownMenuItem
-                    key={comp.id ? `company-${comp.id}` : `comp-${idx}`}
-                    onClick={() => handleSelectCompany(comp)}
-                    className={`rounded-xl px-3 py-2.5 cursor-pointer flex items-center justify-between font-semibold text-sm ${
-                      isSelected ? "bg-primary/10 text-primary font-bold" : "hover:bg-muted"
-                    }`}
+                    onClick={() => setAddCompanyOpen(true)}
+                    className="rounded-xl cursor-pointer p-2 text-primary focus:text-primary focus:bg-primary/10"
                   >
-                    <div className="flex items-center gap-2.5">
-                      <Building2 className={`h-4 w-4 ${isSelected ? "text-primary" : "text-muted-foreground"}`} />
-                      <span>{comp.name}</span>
-                    </div>
-                    {isSelected && <span className="text-[10px] bg-primary text-primary-foreground px-2 py-0.5 rounded-full font-bold">Active</span>}
+                    <PlusCircle className="mr-2 h-4 w-4" />
+                    <span className="font-bold text-sm">Add New Company</span>
                   </DropdownMenuItem>
-                )
-              })}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={() => setAddCompanyOpen(true)}
-                className="rounded-xl px-3 py-2.5 cursor-pointer text-primary hover:bg-primary/10 font-bold text-sm flex items-center gap-2"
-              >
-                <PlusCircle className="h-4 w-4" />
-                <span>Add New Company</span>
-              </DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -441,50 +453,54 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
             )}
           </div>
 
-          {/* Set PC Save Location Folder Button */}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleSetSaveFolder}
-            className="bg-card text-foreground hover:bg-primary/10 hover:text-primary font-bold text-xs h-11 px-3 rounded-2xl border-border/80 shadow-sm shrink-0 flex items-center gap-1.5"
-            title={saveFolder ? `Current PC Save Folder: ${saveFolder}` : "Set PC Save Folder location for all exported files"}
-          >
-            <FolderOpen className="h-4 w-4 text-amber-500" />
-            <span className="hidden xl:inline text-xs truncate max-w-[110px]">
-              {saveFolder ? saveFolder.split("\\").pop() || "Save Path" : "Save Location"}
-            </span>
-          </Button>
+          {canEdit && (
+            <>
+              {/* Set PC Save Location Folder Button */}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleSetSaveFolder}
+                className="bg-card text-foreground hover:bg-primary/10 hover:text-primary font-bold text-xs h-11 px-3 rounded-2xl border-border/80 shadow-sm shrink-0 flex items-center gap-1.5"
+                title={saveFolder ? `Current PC Save Folder: ${saveFolder}` : "Set PC Save Folder location for all exported files"}
+              >
+                <FolderOpen className="h-4 w-4 text-amber-500" />
+                <span className="hidden xl:inline text-xs truncate max-w-[110px]">
+                  {saveFolder ? saveFolder.split("\\").pop() || "Save Path" : "Save Location"}
+                </span>
+              </Button>
 
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleExportDatabase}
-            className="bg-card text-foreground hover:bg-primary/10 hover:text-primary font-bold text-xs h-11 px-4 rounded-2xl border-border/80 shadow-sm shrink-0"
-            title={`Download ${activeCompany.name} database backup (.json)`}
-          >
-            <Download className="h-4 w-4 mr-1.5 text-primary" />
-            Backup Database (.json)
-          </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleExportDatabase}
+                className="bg-card text-foreground hover:bg-primary/10 hover:text-primary font-bold text-xs h-11 px-4 rounded-2xl border-border/80 shadow-sm shrink-0"
+                title={`Download ${activeCompany.name} database backup (.json)`}
+              >
+                <Download className="h-4 w-4 mr-1.5 text-primary" />
+                Backup Database (.json)
+              </Button>
 
-          <input
-            type="file"
-            ref={fileInputRef}
-            accept=".json"
-            onChange={handleImportDatabase}
-            className="hidden"
-          />
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => fileInputRef.current?.click()}
-            className="bg-card text-foreground hover:bg-primary/10 hover:text-primary font-bold text-xs h-11 px-3 rounded-2xl border-border/80 shadow-sm shrink-0"
-            title={`Restore ${activeCompany.name} database from .json backup file`}
-          >
-            <UploadCloud className="h-4 w-4" />
-          </Button>
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept=".json"
+                onChange={handleImportDatabase}
+                className="hidden"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+                className="bg-card text-foreground hover:bg-primary/10 hover:text-primary font-bold text-xs h-11 px-3 rounded-2xl border-border/80 shadow-sm shrink-0"
+                title={`Restore ${activeCompany.name} database from .json backup file`}
+              >
+                <UploadCloud className="h-4 w-4" />
+              </Button>
+            </>
+          )}
         </div>
 
         <div className="flex items-center gap-3">
@@ -520,19 +536,61 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
 
           <div className="space-y-6 py-2">
             {/* Backup Section */}
+            {canEdit && (
+              <div className="bg-muted/30 p-4 rounded-2xl border border-border/50 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="font-bold text-sm">Download Database Backup</h4>
+                    <p className="text-xs text-muted-foreground">Export full JSON backup for {activeCompany.name}</p>
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={handleExportDatabase}
+                    className="rounded-xl font-bold bg-primary text-primary-foreground text-xs h-9 px-3"
+                  >
+                    <Download className="h-3.5 w-3.5 mr-1.5" />
+                    Backup (.json)
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Authentication Settings */}
             <div className="bg-muted/30 p-4 rounded-2xl border border-border/50 space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <h4 className="font-bold text-sm">Download Database Backup</h4>
-                  <p className="text-xs text-muted-foreground">Export full JSON backup for {activeCompany.name}</p>
+                  <h4 className="font-bold text-sm">Account Settings</h4>
+                  <p className="text-xs text-muted-foreground">Manage your credentials {isAdminUser && "or system users"}</p>
                 </div>
+                <div className="flex gap-2">
+                  {isAdminUser && (
+                    <Button
+                      type="button"
+                      onClick={() => setManageUsersOpen(true)}
+                      variant="outline"
+                      className="rounded-xl font-bold text-xs h-9 px-3 border-primary/20 text-primary hover:bg-primary/5"
+                    >
+                      Users
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    onClick={() => setChangeCredsOpen(true)}
+                    variant="outline"
+                    className="rounded-xl font-bold text-xs h-9 px-3"
+                  >
+                    Change
+                  </Button>
+                </div>
+              </div>
+              <div className="pt-2 border-t border-border/50">
                 <Button
                   type="button"
-                  onClick={handleExportDatabase}
-                  className="rounded-xl font-bold bg-primary text-primary-foreground text-xs h-9 px-3"
+                  onClick={handleLogout}
+                  variant="ghost"
+                  className="w-full text-destructive hover:bg-destructive/10 rounded-xl font-bold text-xs h-9"
                 >
-                  <Download className="h-3.5 w-3.5 mr-1.5" />
-                  Backup (.json)
+                  Logout
                 </Button>
               </div>
             </div>
@@ -544,14 +602,16 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
                 Manage Created Companies
               </h4>
               <div className="space-y-2 max-h-60 overflow-y-auto border rounded-2xl p-3 bg-muted/20">
-                {companies.map((comp) => {
+                {mounted && companies.map((comp, idx) => {
                   const isActive = comp.id === activeCompany.id
                   const canDelete = companies.length > 1
 
                   return (
                     <div
-                      key={`settings-comp-${comp.id}`}
-                      className="flex items-center justify-between p-3 rounded-xl bg-card border border-border/80 shadow-sm"
+                      key={`settings-comp-${comp.id || idx}`}
+                      className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${
+                        isActive ? "bg-primary/5 border-primary/20" : "bg-card border-border/80"
+                      } shadow-sm`}
                     >
                       <div>
                         <div className="flex items-center gap-2">
@@ -565,7 +625,7 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
                         <p className="text-xs text-muted-foreground">{comp.tagline || "Project Manager"}</p>
                       </div>
 
-                      {canDelete && (
+                      {canDelete && isAdminUser && (
                         <Button
                           type="button"
                           variant="ghost"
@@ -602,8 +662,12 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
           </div>
         </DialogContent>
       </Dialog>
+      <ChangeCredentialsDialog open={changeCredsOpen} onOpenChange={setChangeCredsOpen} />
 
-      {/* Dialog for Adding New Company */}
+      {/* Manage Users Dialog (Admin Only) */}
+      <ManageUsersDialog open={manageUsersOpen} onOpenChange={setManageUsersOpen} />
+
+      {/* Add Company Dialog */}
       <Dialog open={addCompanyOpen} onOpenChange={setAddCompanyOpen}>
         <DialogContent className="max-w-md rounded-3xl p-6">
           <DialogHeader>

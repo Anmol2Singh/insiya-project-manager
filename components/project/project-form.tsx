@@ -4,6 +4,15 @@ import React, { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { getActiveCompany } from "@/lib/company-store"
+import { hasEditPermission } from "@/lib/auth-store"
+import {
+  getDropdownCategories,
+  saveDropdownCategories,
+  getDropdownSalesmen,
+  saveDropdownSalesmen,
+  DEFAULT_ORDER_TYPES,
+  DEFAULT_SALESMAN_OPTIONS,
+} from "@/lib/dropdown-store"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -27,19 +36,6 @@ import type { Project } from "@/lib/types"
 import { toast } from "sonner"
 import { LayoutGrid, Save, Plus, Trash2, Settings2, ChevronUp, ChevronDown, Edit2, Check, X } from "lucide-react"
 
-const DEFAULT_ORDER_TYPES = [
-  "Boom Barrier",
-  "Heat Pump",
-  "Solar Water Heater",
-  "ETC",
-  "FPC",
-  "Other",
-]
-
-const DEFAULT_SALESMAN_OPTIONS = [
-  "Sales Person 1",
-  "Sales Person 2",
-]
 
 interface ProjectFormProps {
   project?: Project
@@ -50,6 +46,12 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Permissions
+  const [canEdit, setCanEdit] = useState(false)
+  useEffect(() => {
+    setCanEdit(hasEditPermission())
+  }, [])
 
   // Categories management state
   const [categories, setCategories] = useState<string[]>(DEFAULT_ORDER_TYPES)
@@ -64,35 +66,26 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
   const [editingSalesmanText, setEditingSalesmanText] = useState("")
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem("order_categories")
-      if (stored) {
-        const parsed = JSON.parse(stored)
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setCategories(parsed)
-        }
+    async function loadDropdowns() {
+      try {
+        const cats = await getDropdownCategories()
+        setCategories(cats)
+        
+        const salesmen = await getDropdownSalesmen()
+        setSalesmanOptions(salesmen)
+      } catch (e) {
+        console.error("Error loading dropdown options from DB:", e)
       }
-
-      const storedSalesmen = localStorage.getItem("salesman_options")
-      if (storedSalesmen) {
-        const parsed = JSON.parse(storedSalesmen)
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setSalesmanOptions(parsed)
-        }
-      }
-    } catch (e) {
-      console.error("Error loading stored dropdown options:", e)
     }
+    loadDropdowns()
   }, [])
 
-  const saveCategories = (updated: string[]) => {
+  const saveCategories = async (updated: string[]) => {
     setCategories(updated)
-    if (typeof window !== "undefined") {
-      localStorage.setItem("order_categories", JSON.stringify(updated))
-    }
+    await saveDropdownCategories(updated)
   }
 
-  const handleAddCategory = () => {
+  const handleAddCategory = async () => {
     const trimmed = newCategoryName.trim()
     if (!trimmed) return
     if (categories.includes(trimmed)) {
@@ -100,18 +93,18 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
       return
     }
     const updated = [...categories, trimmed]
-    saveCategories(updated)
+    await saveCategories(updated)
     setNewCategoryName("")
     toast.success(`Category "${trimmed}" added!`)
   }
 
-  const handleRemoveCategory = (catToRemove: string) => {
+  const handleRemoveCategory = async (catToRemove: string) => {
     if (categories.length <= 1) {
       toast.error("Cannot remove all categories")
       return
     }
     const updated = categories.filter((c) => c !== catToRemove)
-    saveCategories(updated)
+    await saveCategories(updated)
     if (formData.order_type === catToRemove) {
       setFormData((prev) => ({ ...prev, order_type: updated[0] || "" }))
     }
@@ -119,14 +112,12 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
   }
 
   // Salesman Management Handlers
-  const saveSalesmanOptions = (updated: string[]) => {
+  const saveSalesmanOptions = async (updated: string[]) => {
     setSalesmanOptions(updated)
-    if (typeof window !== "undefined") {
-      localStorage.setItem("salesman_options", JSON.stringify(updated))
-    }
+    await saveDropdownSalesmen(updated)
   }
 
-  const handleAddSalesman = () => {
+  const handleAddSalesman = async () => {
     const trimmed = newSalesmanName.trim()
     if (!trimmed) return
     if (salesmanOptions.includes(trimmed)) {
@@ -134,18 +125,18 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
       return
     }
     const updated = [...salesmanOptions, trimmed]
-    saveSalesmanOptions(updated)
+    await saveSalesmanOptions(updated)
     setNewSalesmanName("")
     toast.success(`Salesman "${trimmed}" added!`)
   }
 
-  const handleRemoveSalesman = (nameToRemove: string) => {
+  const handleRemoveSalesman = async (nameToRemove: string) => {
     if (salesmanOptions.length <= 1) {
       toast.error("Cannot remove all salesmen from list")
       return
     }
     const updated = salesmanOptions.filter((s) => s !== nameToRemove)
-    saveSalesmanOptions(updated)
+    await saveSalesmanOptions(updated)
     if (formData.salesman_name === nameToRemove) {
       setFormData((prev) => ({ ...prev, salesman_name: updated[0] || "" }))
     }
@@ -157,13 +148,13 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
     setEditingSalesmanText(currentText)
   }
 
-  const handleSaveEditSalesman = (idx: number) => {
+  const handleSaveEditSalesman = async (idx: number) => {
     const trimmed = editingSalesmanText.trim()
     if (!trimmed) return
     const updated = [...salesmanOptions]
     const oldName = updated[idx]
     updated[idx] = trimmed
-    saveSalesmanOptions(updated)
+    await saveSalesmanOptions(updated)
     if (formData.salesman_name === oldName) {
       setFormData((prev) => ({ ...prev, salesman_name: trimmed }))
     }
@@ -172,22 +163,22 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
     toast.success("Salesman name updated")
   }
 
-  const handleMoveUpSalesman = (idx: number) => {
+  const handleMoveUpSalesman = async (idx: number) => {
     if (idx === 0) return
     const updated = [...salesmanOptions]
     const temp = updated[idx - 1]
     updated[idx - 1] = updated[idx]
     updated[idx] = temp
-    saveSalesmanOptions(updated)
+    await saveSalesmanOptions(updated)
   }
 
-  const handleMoveDownSalesman = (idx: number) => {
+  const handleMoveDownSalesman = async (idx: number) => {
     if (idx === salesmanOptions.length - 1) return
     const updated = [...salesmanOptions]
     const temp = updated[idx + 1]
     updated[idx + 1] = updated[idx]
     updated[idx] = temp
-    saveSalesmanOptions(updated)
+    await saveSalesmanOptions(updated)
   }
 
   const [formData, setFormData] = useState({
@@ -195,6 +186,7 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
     order_type: project?.order_type || "",
     salesman_name: project?.salesman_name || "",
     site_name: project?.site_name || "",
+    party_print_name: project?.party_print_name || "",
     mobile_number: project?.mobile_number || "",
     address: project?.address || "",
     hp_type: project?.hp_type || "",
@@ -207,8 +199,14 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!canEdit) return
     setLoading(true)
     setError(null)
+
+    // Auto-copy site_name to party_print_name if party_print_name is blank
+    const finalPartyPrintName = formData.party_print_name.trim() === "" && formData.site_name.trim() !== "" 
+      ? formData.site_name.trim() 
+      : formData.party_print_name;
 
     try {
       const supabase = createClient()
@@ -219,6 +217,7 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
         order_type: formData.order_type,
         salesman_name: formData.salesman_name || null,
         site_name: formData.site_name,
+        party_print_name: finalPartyPrintName || null,
         mobile_number: formData.mobile_number || null,
         address: formData.address,
         hp_type: formData.hp_type || null,
@@ -268,6 +267,11 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
 
   return (
     <Card className="border-0 shadow-2xl bg-card/60 backdrop-blur-xl rounded-3xl overflow-hidden mb-12">
+      {!canEdit && (
+        <div className="bg-amber-500/10 border-b border-amber-500/20 p-3 text-center text-amber-600 dark:text-amber-400 font-semibold text-sm">
+          You are in View-Only mode. You do not have permission to make changes.
+        </div>
+      )}
       <CardHeader className="bg-primary/5 pb-8 border-b">
         <CardTitle className="text-xl font-bold flex items-center gap-2">
           <div className="p-1.5 bg-primary/10 rounded-lg">
@@ -300,73 +304,77 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
                   type="number"
                   value={formData.id_no}
                   onChange={(e) => setFormData({ ...formData, id_no: e.target.value })}
-                  placeholder="e.g., 18032"
+                  placeholder="Enter Project ID"
                   className="rounded-xl h-12 bg-muted/30 border-border/50 focus:bg-background transition-all"
                   required
+                  disabled={!canEdit}
                 />
               </div>
 
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
-                  <Label htmlFor="order_type" className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">Order Category</Label>
+                  <Label htmlFor="order_type" className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">Item Group</Label>
                   
                   {/* Category Manager Dialog Button */}
-                  <Dialog open={manageDialogOpen} onOpenChange={setManageDialogOpen}>
-                    <DialogTrigger asChild>
-                      <button
-                        type="button"
-                        className="text-xs text-primary hover:underline font-semibold flex items-center gap-1"
-                      >
-                        <Settings2 className="h-3 w-3" /> Add/Remove
-                      </button>
-                    </DialogTrigger>
-                    <DialogContent className="max-w-md">
-                      <DialogHeader>
-                        <DialogTitle className="text-lg font-bold">Manage Order Categories</DialogTitle>
-                      </DialogHeader>
-                      <div className="space-y-4 py-2">
-                        <div className="flex gap-2">
-                          <Input
-                            placeholder="New Category Name..."
-                            value={newCategoryName}
-                            onChange={(e) => setNewCategoryName(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                e.preventDefault()
-                                handleAddCategory()
-                              }
-                            }}
-                            className="rounded-xl"
-                          />
-                          <Button type="button" onClick={handleAddCategory} className="rounded-xl font-bold">
-                            <Plus className="h-4 w-4 mr-1" /> Add
-                          </Button>
+                  {canEdit && (
+                    <Dialog open={manageDialogOpen} onOpenChange={setManageDialogOpen}>
+                      <DialogTrigger asChild>
+                        <button
+                          type="button"
+                          className="text-xs text-primary hover:underline font-semibold flex items-center gap-1"
+                        >
+                          <Settings2 className="h-3 w-3" /> Add/Remove
+                        </button>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-md">
+                        <DialogHeader>
+                          <DialogTitle className="text-lg font-bold">Manage Item Groups</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4 py-2">
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="New Category Name..."
+                              value={newCategoryName}
+                              onChange={(e) => setNewCategoryName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault()
+                                  handleAddCategory()
+                                }
+                              }}
+                              className="rounded-xl"
+                            />
+                            <Button type="button" onClick={handleAddCategory} className="rounded-xl font-bold">
+                              <Plus className="h-4 w-4 mr-1" /> Add
+                            </Button>
+                          </div>
+                          <div className="space-y-2 max-h-60 overflow-y-auto border rounded-2xl p-3 bg-muted/30">
+                            {categories.filter(Boolean).map((cat, idx) => (
+                              <div key={`manage-cat-${idx}-${cat}`} className="flex justify-between items-center bg-card p-2.5 rounded-xl border border-border">
+                                <span className="text-sm font-semibold">{cat}</span>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleRemoveCategory(cat)}
+                                  className="text-destructive hover:bg-destructive/10 h-8 w-8 p-0 rounded-lg"
+                                  title="Remove Category"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                        <div className="space-y-2 max-h-60 overflow-y-auto border rounded-2xl p-3 bg-muted/30">
-                          {categories.filter(Boolean).map((cat, idx) => (
-                            <div key={`manage-cat-${idx}-${cat}`} className="flex justify-between items-center bg-card p-2.5 rounded-xl border border-border">
-                              <span className="text-sm font-semibold">{cat}</span>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleRemoveCategory(cat)}
-                                className="text-destructive hover:bg-destructive/10 h-8 w-8 p-0 rounded-lg"
-                                title="Remove Category"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </DialogContent>
-                  </Dialog>
+                      </DialogContent>
+                    </Dialog>
+                  )}
                 </div>
 
                 <Select
                   value={formData.order_type}
                   onValueChange={(value) => setFormData({ ...formData, order_type: value })}
+                  disabled={!canEdit}
                 >
                   <SelectTrigger className="rounded-xl h-12 bg-muted/30 border-border/50 focus:bg-background transition-all">
                     <SelectValue placeholder="Select type" />
@@ -385,22 +393,25 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
                   <Label htmlFor="salesman_name" className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">
                     Sales Man Name
                   </Label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setManageSalesmanOpen(true)
-                      setEditingSalesmanIdx(null)
-                      setNewSalesmanName("")
-                    }}
-                    className="text-xs text-primary hover:underline font-semibold flex items-center gap-1"
-                  >
-                    <Settings2 className="h-3 w-3" /> Edit Dropdown List
-                  </button>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setManageSalesmanOpen(true)
+                        setEditingSalesmanIdx(null)
+                        setNewSalesmanName("")
+                      }}
+                      className="text-xs text-primary hover:underline font-semibold flex items-center gap-1"
+                    >
+                      <Settings2 className="h-3 w-3" /> Edit Dropdown List
+                    </button>
+                  )}
                 </div>
 
                 <Select
                   value={formData.salesman_name}
                   onValueChange={(value) => setFormData({ ...formData, salesman_name: value })}
+                  disabled={!canEdit}
                 >
                   <SelectTrigger className="rounded-xl h-12 bg-muted/30 border-border/50 focus:bg-background transition-all">
                     <SelectValue placeholder="Select Sales Man" />
@@ -423,9 +434,22 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
                   id="site_name"
                   value={formData.site_name}
                   onChange={(e) => setFormData({ ...formData, site_name: e.target.value })}
-                  placeholder="e.g., Eastern Elegance Hadapsar"
+                  placeholder="Enter Official Site Name"
                   className="rounded-xl h-12 bg-muted/30 border-border/50 focus:bg-background transition-all"
                   required
+                  disabled={!canEdit}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="party_print_name" className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">Party Print Name</Label>
+                <Input
+                  id="party_print_name"
+                  value={formData.party_print_name}
+                  onChange={(e) => setFormData({ ...formData, party_print_name: e.target.value })}
+                  placeholder="Enter Party Print Name"
+                  className="rounded-xl h-12 bg-muted/30 border-border/50 focus:bg-background transition-all"
+                  disabled={!canEdit}
                 />
               </div>
 
@@ -435,8 +459,9 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
                   id="mobile_number"
                   value={formData.mobile_number}
                   onChange={(e) => setFormData({ ...formData, mobile_number: e.target.value })}
-                  placeholder="e.g., +91 9876543210"
+                  placeholder="Enter Mobile Number"
                   className="rounded-xl h-12 bg-muted/30 border-border/50 focus:bg-background transition-all"
+                  disabled={!canEdit}
                 />
               </div>
             </div>
@@ -447,9 +472,10 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
                 id="address"
                 value={formData.address}
                 onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                placeholder="Detailed site location..."
+                placeholder="Enter Installation Address"
                 className="rounded-xl bg-muted/30 border-border/50 focus:bg-background transition-all min-h-[100px] resize-none"
                 required
+                disabled={!canEdit}
               />
             </div>
           </section>
@@ -463,24 +489,27 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 p-6 bg-muted/20 rounded-3xl border border-dashed border-border/50">
               <div className="space-y-2">
-                <Label htmlFor="hp_type" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground ml-1">HP Type</Label>
+                <Label htmlFor="hp_type" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground ml-1">Item Name</Label>
                 <Input
                   id="hp_type"
                   value={formData.hp_type}
                   onChange={(e) => setFormData({ ...formData, hp_type: e.target.value })}
-                  placeholder="e.g., 5HP"
+                  placeholder="Enter Item Name"
                   className="rounded-xl bg-background border-border/30 h-11"
+                  disabled={!canEdit}
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="hp_qty" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground ml-1">HP Qty</Label>
+                <Label htmlFor="hp_qty" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground ml-1">Item Qty</Label>
                 <Input
                   id="hp_qty"
                   type="number"
                   value={formData.hp_qty}
                   onChange={(e) => setFormData({ ...formData, hp_qty: e.target.value })}
+                  placeholder="Enter Item Qty"
                   className="rounded-xl bg-background border-border/30 h-11"
+                  disabled={!canEdit}
                 />
               </div>
 
@@ -493,6 +522,7 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
                   value={formData.tank_type}
                   onChange={(e) => setFormData({ ...formData, tank_type: e.target.value })}
                   className="rounded-xl bg-background border-border/30 h-11"
+                  disabled={!canEdit}
                 />
               </div>
 
@@ -503,7 +533,9 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
                   type="number"
                   value={formData.tank_qty}
                   onChange={(e) => setFormData({ ...formData, tank_qty: e.target.value })}
+                  placeholder="Enter Tank Qty"
                   className="rounded-xl bg-background border-border/30 h-11"
+                  disabled={!canEdit}
                 />
               </div>
             </div>
@@ -522,8 +554,9 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
                 id="work_remark"
                 value={formData.work_remark}
                 onChange={(e) => setFormData({ ...formData, work_remark: e.target.value })}
-                placeholder="e.g., payment term 100% After installation"
+                placeholder="Enter Project Notes / Terms"
                 className="rounded-xl bg-muted/30 border-border/50 focus:bg-background transition-all min-h-[100px] resize-none"
+                disabled={!canEdit}
               />
             </div>
           </section>
@@ -541,7 +574,7 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
             </Button>
             <Button
               type="submit"
-              disabled={loading || !formData.site_name || !formData.order_type}
+              disabled={loading || !formData.site_name || !formData.order_type || !canEdit}
               className="bg-primary text-primary-foreground shadow-xl shadow-primary/20 rounded-2xl h-14 px-12 font-bold hover:scale-105 active:scale-95 transition-all"
             >
               {loading ? (

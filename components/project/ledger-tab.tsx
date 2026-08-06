@@ -21,6 +21,7 @@ import { syncProjectTotals } from "@/lib/project-utils"
 import { generateProjectLedgerPDF } from "@/lib/pdf-generator"
 import { exportCustomerLedgerToExcel, importCustomerLedgerFromExcel } from "@/lib/customer-excel-utils"
 import { toast } from "sonner"
+import { hasEditPermission } from "@/lib/auth-store"
 
 interface LedgerTabProps {
   entries: LedgerEntry[]
@@ -50,8 +51,13 @@ export function LedgerTab({
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [exportingPDF, setExportingPDF] = useState(false)
   const [importingExcel, setImportingExcel] = useState(false)
+  const [canEdit, setCanEdit] = useState(false)
 
   const excelInputRef = useRef<HTMLInputElement | null>(null)
+
+  useState(() => {
+    setCanEdit(hasEditPermission())
+  })
 
   const formatCurrency = (value: number | null | undefined, allowZero = false) => {
     if ((value === 0 || value === null || value === undefined) && !allowZero) return ""
@@ -239,41 +245,47 @@ export function LedgerTab({
               {exportingPDF ? "Generating PDF..." : "Export PDF"}
             </Button>
 
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleExportCustomerExcel}
-              className="bg-card text-foreground hover:bg-success/10 font-bold border-border shadow-sm"
-              title="Export all 6 tabs into a multi-sheet Excel file"
-            >
-              <FileSpreadsheet className="h-4 w-4 mr-2 text-success" />
-              Export Excel
-            </Button>
+            {canEdit && (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleExportCustomerExcel}
+                  className="bg-card text-foreground hover:bg-success/10 font-bold border-border shadow-sm"
+                  title="Export all 6 tabs into a multi-sheet Excel file"
+                >
+                  <FileSpreadsheet className="h-4 w-4 mr-2 text-success" />
+                  Export Excel
+                </Button>
 
-            <input
-              type="file"
-              ref={excelInputRef}
-              accept=".xlsx, .xls"
-              onChange={handleImportCustomerExcel}
-              className="hidden"
-            />
+                <input
+                  type="file"
+                  ref={excelInputRef}
+                  accept=".xlsx, .xls"
+                  onChange={handleImportCustomerExcel}
+                  className="hidden"
+                />
 
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={importingExcel}
-              onClick={() => excelInputRef.current?.click()}
-              className="bg-card text-foreground hover:bg-primary/10 font-bold border-border shadow-sm"
-              title="Import Customer Ledger data from Excel"
-            >
-              <UploadCloud className="h-4 w-4 mr-2 text-primary" />
-              {importingExcel ? "Importing..." : "Import Excel"}
-            </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={importingExcel}
+                  onClick={() => excelInputRef.current?.click()}
+                  className="bg-card text-foreground hover:bg-primary/10 font-bold border-border shadow-sm"
+                  title="Import Customer Ledger data from Excel"
+                >
+                  <UploadCloud className="h-4 w-4 mr-2 text-primary" />
+                  {importingExcel ? "Importing..." : "Import Excel"}
+                </Button>
+              </>
+            )}
 
-            <Button size="sm" onClick={() => setShowAddDialog(true)} className="bg-primary text-primary-foreground shadow-md hover:scale-105 transition-transform font-bold">
-              <Plus className="h-4 w-4 mr-2" />
-              Add New Entry
-            </Button>
+            {canEdit && (
+              <Button size="sm" onClick={() => setShowAddDialog(true)} className="bg-primary text-primary-foreground shadow-md hover:scale-105 transition-transform font-bold">
+                <Plus className="h-4 w-4 mr-2" />
+                Add New Entry
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent className="p-0">
@@ -292,7 +304,7 @@ export function LedgerTab({
                   <TableHead className="font-bold text-foreground text-right bg-info/10 uppercase text-[10px] tracking-widest">Order Val</TableHead>
                   <TableHead className="font-bold text-foreground text-right bg-info/10 uppercase text-[10px] tracking-widest">Extra Wrk</TableHead>
                   <TableHead className="font-bold text-foreground text-right bg-success/10 uppercase text-[10px] tracking-widest">Received</TableHead>
-                  <TableHead className="font-bold text-foreground text-right uppercase text-[10px] tracking-widest">Action</TableHead>
+                  {canEdit && <TableHead className="font-bold text-foreground text-right uppercase text-[10px] tracking-widest">Action</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -332,29 +344,31 @@ export function LedgerTab({
                       <TableCell className="text-right bg-info/5 font-mono text-xs">{formatCurrency(entry.order_value)}</TableCell>
                       <TableCell className="text-right bg-info/5 font-mono text-xs">{formatCurrency(entry.extra_work_value)}</TableCell>
                       <TableCell className="text-right bg-success/5 font-mono text-xs text-success font-semibold">{formatCurrency(entry.payment_received)}</TableCell>
-                      <TableCell className="text-right pr-2 w-20">
-                        <div className="flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-primary hover:bg-primary/10"
-                            onClick={() => setEditingEntry(entry)}
-                            title="Edit entry"
-                          >
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-destructive hover:bg-destructive/10"
-                            onClick={() => handleDelete(entry.id)}
-                            disabled={deletingId === entry.id}
-                            title="Delete entry"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      </TableCell>
+                      {canEdit && (
+                        <TableCell className="text-right pr-2 w-20">
+                          <div className="flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-primary hover:bg-primary/10"
+                              onClick={() => setEditingEntry(entry)}
+                              title="Edit entry"
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                              onClick={() => handleDelete(entry.id)}
+                              disabled={deletingId === entry.id}
+                              title="Delete entry"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      )}
                     </motion.tr>
                   ))}
                 </AnimatePresence>
@@ -374,7 +388,7 @@ export function LedgerTab({
                     <TableCell className="text-right bg-info/10 font-mono">{formatCurrency(totals.orderValue, true)}</TableCell>
                     <TableCell className="text-right bg-info/10 font-mono">{formatCurrency(totals.extraWorkValue, true)}</TableCell>
                     <TableCell className="text-right bg-success/10 font-mono text-success">{formatCurrency(totals.paymentReceived, true)}</TableCell>
-                    <TableCell className="bg-muted/50"></TableCell>
+                    {canEdit && <TableCell className="bg-muted/50"></TableCell>}
                   </TableRow>
                 )}
               </TableBody>
@@ -405,25 +419,29 @@ export function LedgerTab({
                       {entry.payment_type && (
                         <Badge variant="secondary" className="text-[10px] font-bold uppercase px-1.5 h-5">{entry.payment_type}</Badge>
                       )}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-primary"
-                        onClick={() => setEditingEntry(entry)}
-                        title="Edit entry"
-                      >
-                        <Edit2 className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-destructive"
-                        onClick={() => handleDelete(entry.id)}
-                        disabled={deletingId === entry.id}
-                        title="Delete entry"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      {canEdit && (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-primary"
+                            onClick={() => setEditingEntry(entry)}
+                            title="Edit entry"
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive"
+                            onClick={() => handleDelete(entry.id)}
+                            disabled={deletingId === entry.id}
+                            title="Delete entry"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </div>
 

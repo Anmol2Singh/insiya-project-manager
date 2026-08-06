@@ -16,6 +16,7 @@ import type { CallingRecord } from "@/lib/types"
 import { AddCallingRecordDialog } from "./add-calling-record-dialog"
 import { createClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
+import { hasEditPermission } from "@/lib/auth-store"
 
 interface CallingRecordsTabProps {
   records: CallingRecord[]
@@ -27,6 +28,11 @@ export function CallingRecordsTab({ records, projectId, onRefresh }: CallingReco
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [editingRecord, setEditingRecord] = useState<CallingRecord | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [canEdit, setCanEdit] = useState(false)
+
+  useState(() => {
+    setCanEdit(hasEditPermission())
+  })
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString("en-IN", {
@@ -67,10 +73,12 @@ export function CallingRecordsTab({ records, projectId, onRefresh }: CallingReco
             <Phone className="h-5 w-5 text-primary" />
             <CardTitle className="text-lg font-semibold">Calling Records</CardTitle>
           </div>
-          <Button size="sm" onClick={() => { setEditingRecord(null); setShowAddDialog(true) }} className="bg-primary text-primary-foreground font-bold">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Record
-          </Button>
+          {canEdit && (
+            <Button size="sm" onClick={() => { setEditingRecord(null); setShowAddDialog(true) }} className="bg-primary text-primary-foreground font-bold">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Record
+            </Button>
+          )}
         </CardHeader>
         <CardContent className="p-0">
           {/* Desktop Table */}
@@ -81,7 +89,7 @@ export function CallingRecordsTab({ records, projectId, onRefresh }: CallingReco
                   <TableHead className="font-semibold text-foreground w-16">S No</TableHead>
                   <TableHead className="font-semibold text-foreground w-32">Date</TableHead>
                   <TableHead className="font-semibold text-foreground">Description</TableHead>
-                  <TableHead className="font-semibold text-foreground text-right">Action</TableHead>
+                  {canEdit && <TableHead className="font-semibold text-foreground text-right">Action</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -90,29 +98,31 @@ export function CallingRecordsTab({ records, projectId, onRefresh }: CallingReco
                     <TableCell>{record.sr_no}</TableCell>
                     <TableCell>{formatDate(record.date)}</TableCell>
                     <TableCell>{record.description || "-"}</TableCell>
-                    <TableCell className="text-right pr-2">
-                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-primary hover:bg-primary/10"
-                          onClick={() => setEditingRecord(record)}
-                          title="Edit record"
-                        >
-                          <Edit2 className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-destructive hover:bg-destructive/10"
-                          onClick={() => handleDelete(record.id)}
-                          disabled={deletingId === record.id}
-                          title="Delete record"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </TableCell>
+                    {canEdit && (
+                      <TableCell className="text-right pr-2">
+                        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-primary hover:bg-primary/10"
+                            onClick={() => setEditingRecord(record)}
+                            title="Edit record"
+                          >
+                            <Edit2 className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                            onClick={() => handleDelete(record.id)}
+                            disabled={deletingId === record.id}
+                            title="Delete record"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
                 {records.length === 0 && (
@@ -135,27 +145,29 @@ export function CallingRecordsTab({ records, projectId, onRefresh }: CallingReco
                     <span className="text-sm font-medium text-muted-foreground">#{record.sr_no}</span>
                     <span className="text-sm">{formatDate(record.date)}</span>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-primary"
-                      onClick={() => setEditingRecord(record)}
-                      title="Edit record"
-                    >
-                      <Edit2 className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-destructive"
-                      onClick={() => handleDelete(record.id)}
-                      disabled={deletingId === record.id}
-                      title="Delete record"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
+                  {canEdit && (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-primary"
+                        onClick={() => setEditingRecord(record)}
+                        title="Edit record"
+                      >
+                        <Edit2 className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-destructive"
+                        onClick={() => handleDelete(record.id)}
+                        disabled={deletingId === record.id}
+                        title="Delete record"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
                 <p className="text-foreground">{record.description || "No description"}</p>
               </div>

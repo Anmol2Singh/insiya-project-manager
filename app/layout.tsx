@@ -3,6 +3,7 @@ import type { Metadata } from 'next'
 import { Toaster } from "sonner"
 import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
+import { AuthGuard } from "@/components/auth/auth-guard"
 import './globals.css'
 
 const geist = Geist({ subsets: ["latin"], variable: '--font-geist' });
@@ -39,7 +40,9 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${geist.variable} ${geistMono.variable} scroll-smooth`}>
       <body className="font-sans antialiased text-foreground selection:bg-primary/20 selection:text-primary">
-        {children}
+        <AuthGuard>
+          {children}
+        </AuthGuard>
         <Toaster closeButton position="top-right" richColors />
         <Analytics />
       </body>

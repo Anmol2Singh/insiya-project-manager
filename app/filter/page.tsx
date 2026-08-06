@@ -4,6 +4,8 @@ import { useState, useEffect, useMemo } from "react"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
 import { getActiveCompany } from "@/lib/company-store"
+import { getDropdownCategories, DEFAULT_ORDER_TYPES } from "@/lib/dropdown-store"
+import { hasEditPermission } from "@/lib/auth-store"
 import type { Project, CallingRecord } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -19,12 +21,12 @@ import autoTable from "jspdf-autotable"
 import * as XLSX from "xlsx"
 import { toast } from "sonner"
 
-const DEFAULT_CATEGORIES = ["Heat Pump", "SWH", "Solar Water Heater", "Solar System", "Commercial SWH"]
 
 export default function FilterProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
-  const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES)
+  const [categories, setCategories] = useState<string[]>(DEFAULT_ORDER_TYPES)
+  const [canEdit, setCanEdit] = useState(false)
 
   // Filter state
   const [selectedType, setSelectedType] = useState<string>("ALL")
@@ -35,6 +37,7 @@ export default function FilterProjectsPage() {
 
   // Fetch projects and categories
   useEffect(() => {
+    setCanEdit(hasEditPermission())
     async function loadData() {
       try {
         const activeComp = getActiveCompany()
@@ -58,18 +61,11 @@ export default function FilterProjectsPage() {
         setLoading(false)
       }
 
-      if (typeof window !== "undefined") {
-        const stored = localStorage.getItem("order_categories")
-        if (stored) {
-          try {
-            const parsed = JSON.parse(stored)
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              setCategories(parsed)
-            }
-          } catch (e) {
-            console.error("Error parsing stored categories:", e)
-          }
-        }
+      try {
+        const cats = await getDropdownCategories()
+        setCategories(cats)
+      } catch (e) {
+        console.error("Error loading categories from DB:", e)
       }
     }
     loadData()
@@ -271,9 +267,13 @@ export default function FilterProjectsPage() {
         "Customer Creation Date": formatDate(p.created_at),
         "Account Clearance Date": clearanceDate,
         "Customer ID": p.id_no,
-        "Order Type": p.order_type,
+        "Item Group": p.order_type,
+        "Item Name": p.hp_type || "-",
+        "Item Qty": p.hp_qty || 0,
         "Sales Man Name": p.salesman_name || "-",
         "Customer / Site Name": p.site_name,
+        "Firm Name": p.firm_name || "-",
+        "Party Print Name": p.party_print_name || "-",
         "Mobile Number": p.mobile_number || "-",
         "Address": p.address,
         "Order Value (Rs)": p.order_value,
@@ -320,15 +320,17 @@ export default function FilterProjectsPage() {
               <Download className="h-4 w-4 mr-1.5 text-primary" />
               Export Filtered PDF
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleExportExcel}
-              className="bg-card font-bold text-xs h-10 rounded-xl shadow-sm"
-            >
-              <FileSpreadsheet className="h-4 w-4 mr-1.5 text-success" />
-              Export Filtered Excel
-            </Button>
+            {canEdit && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExportExcel}
+                className="bg-card font-bold text-xs h-10 rounded-xl shadow-sm"
+              >
+                <FileSpreadsheet className="h-4 w-4 mr-1.5 text-success" />
+                Export Filtered Excel
+              </Button>
+            )}
           </div>
         </div>
       </header>

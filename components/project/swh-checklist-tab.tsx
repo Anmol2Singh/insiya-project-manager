@@ -17,6 +17,7 @@ import type { SwhChecklistItem } from "@/lib/types"
 import { AddChecklistItemDialog } from "./add-checklist-item-dialog"
 import { createClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
+import { hasEditPermission } from "@/lib/auth-store"
 
 interface SwhChecklistTabProps {
   items: SwhChecklistItem[]
@@ -28,6 +29,11 @@ export function SwhChecklistTab({ items, projectId, onRefresh }: SwhChecklistTab
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [editingItem, setEditingItem] = useState<SwhChecklistItem | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [canEdit, setCanEdit] = useState(false)
+
+  useState(() => {
+    setCanEdit(hasEditPermission())
+  })
 
   const handleDelete = async (itemId: string) => {
     if (!confirm("Are you sure you want to delete this checklist item?")) return
@@ -57,10 +63,12 @@ export function SwhChecklistTab({ items, projectId, onRefresh }: SwhChecklistTab
       <Card className="border-0 shadow-sm">
         <CardHeader className="flex flex-row items-center justify-between pb-3">
           <CardTitle className="text-lg font-semibold">Checklist</CardTitle>
-          <Button size="sm" onClick={() => { setEditingItem(null); setShowAddDialog(true) }} className="bg-primary text-primary-foreground font-bold">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Item
-          </Button>
+          {canEdit && (
+            <Button size="sm" onClick={() => { setEditingItem(null); setShowAddDialog(true) }} className="bg-primary text-primary-foreground font-bold">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Item
+            </Button>
+          )}
         </CardHeader>
         <CardContent className="p-0">
           {/* Desktop Table */}
@@ -79,7 +87,7 @@ export function SwhChecklistTab({ items, projectId, onRefresh }: SwhChecklistTab
                   <TableHead className="font-semibold text-foreground text-center">Installed</TableHead>
                   <TableHead className="font-semibold text-foreground text-right">Balance Qty</TableHead>
                   <TableHead className="font-semibold text-foreground">Remark</TableHead>
-                  <TableHead className="font-semibold text-foreground text-right">Action</TableHead>
+                  {canEdit && <TableHead className="font-semibold text-foreground text-right">Action</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -124,29 +132,31 @@ export function SwhChecklistTab({ items, projectId, onRefresh }: SwhChecklistTab
                     <TableCell className="max-w-[150px] truncate text-muted-foreground">
                       {item.remark || "-"}
                     </TableCell>
-                    <TableCell className="text-right pr-2">
-                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-primary hover:bg-primary/10"
-                          onClick={() => setEditingItem(item)}
-                          title="Edit item"
-                        >
-                          <Edit2 className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-destructive hover:bg-destructive/10"
-                          onClick={() => handleDelete(item.id)}
-                          disabled={deletingId === item.id}
-                          title="Delete item"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </TableCell>
+                    {canEdit && (
+                      <TableCell className="text-right pr-2">
+                        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-primary hover:bg-primary/10"
+                            onClick={() => setEditingItem(item)}
+                            title="Edit item"
+                          >
+                            <Edit2 className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                            onClick={() => handleDelete(item.id)}
+                            disabled={deletingId === item.id}
+                            title="Delete item"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
                 {items.length === 0 && (
@@ -169,27 +179,29 @@ export function SwhChecklistTab({ items, projectId, onRefresh }: SwhChecklistTab
                     <span className="text-sm text-muted-foreground">#{item.sr_no}</span>
                     <h4 className="font-medium text-foreground">{item.item_name}</h4>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-primary"
-                      onClick={() => setEditingItem(item)}
-                      title="Edit item"
-                    >
-                      <Edit2 className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-destructive"
-                      onClick={() => handleDelete(item.id)}
-                      disabled={deletingId === item.id}
-                      title="Delete item"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
+                  {canEdit && (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-primary"
+                        onClick={() => setEditingItem(item)}
+                        title="Edit item"
+                      >
+                        <Edit2 className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-destructive"
+                        onClick={() => handleDelete(item.id)}
+                        disabled={deletingId === item.id}
+                        title="Delete item"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-3 gap-2 text-sm">

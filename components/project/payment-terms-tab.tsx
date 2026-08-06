@@ -17,6 +17,7 @@ import type { PaymentTerm } from "@/lib/types"
 import { AddPaymentTermDialog } from "./add-payment-term-dialog"
 import { createClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
+import { hasEditPermission } from "@/lib/auth-store"
 
 interface PaymentTermsTabProps {
   terms: PaymentTerm[]
@@ -29,6 +30,11 @@ export function PaymentTermsTab({ terms, projectId, orderValue, onRefresh }: Pay
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [editingTerm, setEditingTerm] = useState<PaymentTerm | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [canEdit, setCanEdit] = useState(false)
+
+  useState(() => {
+    setCanEdit(hasEditPermission())
+  })
 
   const formatCurrency = (value: number | null) => {
     if (value === null) return "-"
@@ -92,10 +98,12 @@ export function PaymentTermsTab({ terms, projectId, orderValue, onRefresh }: Pay
               </div>
             </div>
           </div>
-          <Button size="sm" onClick={() => { setEditingTerm(null); setShowAddDialog(true) }} className="bg-primary text-primary-foreground font-bold">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Term
-          </Button>
+          {canEdit && (
+            <Button size="sm" onClick={() => { setEditingTerm(null); setShowAddDialog(true) }} className="bg-primary text-primary-foreground font-bold">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Term
+            </Button>
+          )}
         </CardHeader>
         <CardContent className="p-0">
           {/* Desktop Table */}
@@ -109,7 +117,7 @@ export function PaymentTermsTab({ terms, projectId, orderValue, onRefresh }: Pay
                   <TableHead className="font-semibold text-foreground text-right">Received</TableHead>
                   <TableHead className="font-semibold text-foreground text-right">Pending</TableHead>
                   <TableHead className="font-semibold text-foreground">Remark</TableHead>
-                  <TableHead className="font-semibold text-foreground text-right">Action</TableHead>
+                  {canEdit && <TableHead className="font-semibold text-foreground text-right">Action</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -130,29 +138,31 @@ export function PaymentTermsTab({ terms, projectId, orderValue, onRefresh }: Pay
                       <TableCell className="max-w-[200px] truncate text-muted-foreground">
                         {term.remark || "-"}
                       </TableCell>
-                      <TableCell className="text-right pr-2">
-                        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-primary hover:bg-primary/10"
-                            onClick={() => setEditingTerm(term)}
-                            title="Edit term"
-                          >
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-destructive hover:bg-destructive/10"
-                            onClick={() => handleDelete(term.id)}
-                            disabled={deletingId === term.id}
-                            title="Delete term"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      </TableCell>
+                      {canEdit && (
+                        <TableCell className="text-right pr-2">
+                          <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-primary hover:bg-primary/10"
+                              onClick={() => setEditingTerm(term)}
+                              title="Edit term"
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                              onClick={() => handleDelete(term.id)}
+                              disabled={deletingId === term.id}
+                              title="Delete term"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      )}
                     </TableRow>
                   )
                 })}
@@ -174,7 +184,7 @@ export function PaymentTermsTab({ terms, projectId, orderValue, onRefresh }: Pay
                       {formatCurrency(totals.pending)}
                     </TableCell>
                     <TableCell></TableCell>
-                    <TableCell></TableCell>
+                    {canEdit && <TableCell></TableCell>}
                   </TableRow>
                 )}
               </TableBody>
@@ -195,25 +205,29 @@ export function PaymentTermsTab({ terms, projectId, orderValue, onRefresh }: Pay
                       {term.term_percentage && (
                         <span className="text-sm text-muted-foreground">{term.term_percentage}%</span>
                       )}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-primary"
-                        onClick={() => setEditingTerm(term)}
-                        title="Edit term"
-                      >
-                        <Edit2 className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-destructive"
-                        onClick={() => handleDelete(term.id)}
-                        disabled={deletingId === term.id}
-                        title="Delete term"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      {canEdit && (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-primary"
+                            onClick={() => setEditingTerm(term)}
+                            title="Edit term"
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive"
+                            onClick={() => handleDelete(term.id)}
+                            disabled={deletingId === term.id}
+                            title="Delete term"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </div>
                   <Progress value={progressPct} className="h-2" />

@@ -13,8 +13,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Upload, FileSpreadsheet, CheckCircle2, Download } from "lucide-react"
+import { Progress } from "@/components/ui/progress"
 import { createClient } from "@/lib/supabase/client"
-import { getActiveCompany } from "@/lib/company-store"
+import { getActiveCompany, getCompanies } from "@/lib/company-store"
 import { toast } from "sonner"
 
 interface ImportExcelDialogProps {
@@ -26,6 +27,7 @@ interface ImportExcelDialogProps {
 export function ImportExcelDialog({ open, onOpenChange, onSuccess }: ImportExcelDialogProps) {
   const [file, setFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
+  const [importProgress, setImportProgress] = useState(0)
   const [parsedData, setParsedData] = useState<any[] | null>(null)
 
   const handleDownloadTemplate = () => {
@@ -35,10 +37,13 @@ export function ImportExcelDialog({ open, onOpenChange, onSuccess }: ImportExcel
         "Site Name": "Sample Customer Site 1",
         "Mobile Number": "+91 9876543210",
         "Address": "Pune, Maharashtra",
-        "Type": "Heat Pump",
+        "Firm Name": "Playlab Ventures",
+        "Party Print Name": "Playlab Ventures",
+        "Sales Man Name": "John Doe",
+        "Item Group": "Heat Pump",
         "Order Value": 50000,
-        "HP Type": "50KW",
-        "HP Qty": 2,
+        "Item Name": "50KW",
+        "Item Qty": 2,
         "Tank Type": "GI Pressurized",
         "Tank Qty": 1,
         "Remark": "Initial material dispatched",
@@ -48,10 +53,13 @@ export function ImportExcelDialog({ open, onOpenChange, onSuccess }: ImportExcel
         "Site Name": "Sample Customer Site 2",
         "Mobile Number": "+91 9123456789",
         "Address": "Mumbai, Maharashtra",
-        "Type": "Solar Water Heater",
+        "Firm Name": "Insiya Trading",
+        "Party Print Name": "Insiya Trading Corp",
+        "Sales Man Name": "Jane Smith",
+        "Item Group": "Solar Water Heater",
         "Order Value": 75000,
-        "HP Type": "6HP",
-        "HP Qty": 1,
+        "Item Name": "6HP",
+        "Item Qty": 1,
         "Tank Type": "Stainless Steel",
         "Tank Qty": 2,
         "Remark": "Installation in progress",
@@ -104,32 +112,43 @@ export function ImportExcelDialog({ open, onOpenChange, onSuccess }: ImportExcel
       let updatedCount = 0
       let skippedCount = 0
 
-      for (const row of parsedData) {
+      for (let i = 0; i < parsedData.length; i++) {
+        const row = parsedData[i]
+        setImportProgress(Math.round(((i + 1) / parsedData.length) * 100))
+
         const id_no_val = row["ID Number"] || row["Customer ID"] || row["ID"] || row["id_no"] || row["Id Number"]
         const id_no = id_no_val ? parseInt(id_no_val) : null
         const site_name = row["Site Name"] || row["Customer / Site Name"] || row["Site"] || row["site_name"] || row["Name"] || ""
         const mobile_number = row["Mobile Number"] || row["Mobile"] || row["mobile_number"] || row["Phone"] || null
         const address = row["Address"] || row["address"] || row["Location"] || "-"
-        const order_type = row["Type"] || row["Order Type"] || row["order_type"] || "Heat Pump"
+        const order_type = row["Item Group"] || row["Type"] || row["Order Type"] || row["order_type"] || "Heat Pump"
         const salesman_name = row["Sales Man Name"] || row["Sales Man"] || row["Salesman"] || row["Salesman Name"] || row["salesman_name"] || null
+        const firm_name = row["Firm Name"] || row["firm_name"] || null
+        const party_print_name = row["Party Print Name"] || row["party_print_name"] || null
         
         const order_val_raw = row["Order Value"] ?? row["Order Value (Rs)"] ?? row["order_value"] ?? row["Order_Value"]
         const order_value = order_val_raw !== undefined && order_val_raw !== null && order_val_raw !== "" ? parseFloat(order_val_raw) : null
 
-        const hp_type = row["HP Type"] || row["hp_type"] || null
-        const hp_qty_raw = row["HP Qty"] ?? row["hp_qty"]
+        const hp_type = row["Item Name"] || row["HP Type"] || row["hp_type"] || null
+        const hp_qty_raw = row["Item Qty"] ?? row["HP Qty"] ?? row["hp_qty"]
         const hp_qty = hp_qty_raw !== undefined && hp_qty_raw !== null && hp_qty_raw !== "" ? parseInt(hp_qty_raw) : null
 
         const tank_type = row["Tank Type"] || row["tank_type"] || null
         const tank_qty_raw = row["Tank Qty"] ?? row["tank_qty"]
         const tank_qty = tank_qty_raw !== undefined && tank_qty_raw !== null && tank_qty_raw !== "" ? parseInt(tank_qty_raw) : null
 
-        const work_remark = row["Remark"] || row["Work Remark"] || row["Last Work Remark"] || row["work_remark"] || null
+        let work_remark = row["Remark"] || row["Work Remark"] || row["Last Work Remark"] || row["work_remark"] || null
 
         // Match existing entry by ID Number or Site Name
         let existing = null
         if (id_no && !isNaN(id_no)) {
-          existing = projectsList.find((p) => p.id_no === id_no)
+          const matches = projectsList.filter((p) => p.id_no === id_no)
+          if (matches.length > 0) {
+            const exactMatch = matches.find(p => p.site_name?.trim().toLowerCase() === site_name.trim().toLowerCase())
+            if (exactMatch) {
+              existing = exactMatch
+            }
+          }
         }
         if (!existing && site_name) {
           existing = projectsList.find(
@@ -145,6 +164,8 @@ export function ImportExcelDialog({ open, onOpenChange, onSuccess }: ImportExcel
           if (address && address !== "-" && address !== existing.address) updatePayload.address = address
           if (order_type && order_type !== existing.order_type) updatePayload.order_type = order_type
           if (salesman_name && salesman_name !== existing.salesman_name) updatePayload.salesman_name = salesman_name
+          if (firm_name && firm_name !== existing.firm_name) updatePayload.firm_name = firm_name
+          if (party_print_name && party_print_name !== existing.party_print_name) updatePayload.party_print_name = party_print_name
           if (order_value !== null && !isNaN(order_value) && order_value !== existing.order_value) {
             updatePayload.order_value = order_value
           }
@@ -193,7 +214,20 @@ export function ImportExcelDialog({ open, onOpenChange, onSuccess }: ImportExcel
         } else {
           // Entry does not exist -> insert new project
           const activeCompany = getActiveCompany()
+          let targetCompanyId = activeCompany.id
+
+          let final_id_no = id_no
+          if (final_id_no && projectsList.some(p => p.id_no === final_id_no)) {
+            const maxId = projectsList.reduce((max, p) => (p.id_no && p.id_no > max ? p.id_no : max), 0)
+            final_id_no = maxId + 1
+            work_remark = `[Legacy ID: ${id_no_val}] ` + (work_remark || "")
+          } else if (!final_id_no) {
+            const maxId = projectsList.reduce((max, p) => (p.id_no && p.id_no > max ? p.id_no : max), 0)
+            final_id_no = maxId + 1
+          }
+
           const insertPayload: any = {
+            id_no: final_id_no,
             site_name: site_name || "Imported Customer",
             mobile_number,
             address,
@@ -206,18 +240,27 @@ export function ImportExcelDialog({ open, onOpenChange, onSuccess }: ImportExcel
             tank_type,
             tank_qty: tank_qty || 0,
             salesman_name,
+            firm_name,
+            party_print_name,
             work_remark,
             sales_m_value: 0,
             m_outward_value: 0,
             m_balance: 0,
-            company_id: activeCompany.id,
-          }
-          if (id_no && !isNaN(id_no)) {
-            insertPayload.id_no = id_no
+            company_id: targetCompanyId,
           }
 
-          const { data: newProject } = await supabase.from("projects").insert(insertPayload).select().single()
+          const { data: newProject, error } = await supabase.from("projects").insert(insertPayload).select().single()
+          
+          if (error) {
+            console.error("Failed to insert project:", error)
+            skippedCount++
+            continue
+          }
+
           insertedCount++
+          if (newProject) {
+            projectsList.push(newProject)
+          }
 
           // Auto-create ledger entry for Order Value if provided
           const newProjectId = (newProject as any)?.id
@@ -252,6 +295,7 @@ export function ImportExcelDialog({ open, onOpenChange, onSuccess }: ImportExcel
       toast.error(error.message || "Failed to import customers")
     } finally {
       setLoading(false)
+      setImportProgress(0)
     }
   }
 
@@ -302,9 +346,10 @@ export function ImportExcelDialog({ open, onOpenChange, onSuccess }: ImportExcel
               <span className="text-sm font-semibold text-foreground">
                 {file ? file.name : "Click to select Excel file (.xlsx, .csv)"}
               </span>
-              <span className="text-xs text-muted-foreground">
-                Columns: ID Number, Site Name, Mobile Number, Address, Type, Order Value, HP Type, HP Qty, Tank Type, Tank Qty, Remark
-              </span>
+              <p className="text-xs text-muted-foreground mt-4 leading-relaxed bg-muted/30 p-3 rounded-xl border border-border/50 shadow-inner">
+                <strong className="text-foreground">Required format:</strong> Use the template to avoid errors.<br />
+                <span className="opacity-80">Columns: ID Number, Site Name, Mobile Number, Address, Sales Man Name, Firm Name, Party Print Name, Item Group, Order Value, Item Name, Item Qty, Tank Type, Tank Qty, Remark</span>
+              </p>
             </Label>
           </div>
 
@@ -316,7 +361,17 @@ export function ImportExcelDialog({ open, onOpenChange, onSuccess }: ImportExcel
           )}
         </div>
 
-        <div className="flex justify-end gap-3 pt-2">
+        {loading && (
+          <div className="space-y-2 mt-4 px-2">
+            <div className="flex justify-between text-xs font-semibold text-muted-foreground">
+              <span>Importing records...</span>
+              <span>{importProgress}%</span>
+            </div>
+            <Progress value={importProgress} className="h-2" />
+          </div>
+        )}
+
+        <div className="flex justify-end gap-3 pt-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
