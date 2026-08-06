@@ -139,12 +139,27 @@ export function ImportExcelDialog({ open, onOpenChange, onSuccess }: ImportExcel
 
         let work_remark = row["Remark"] || row["Work Remark"] || row["Last Work Remark"] || row["work_remark"] || null
 
-        // Match existing entry by ID Number or Site Name
+        // ALWAYS preserve the original raw ID in the remark if it's provided in the CSV
+        if (id_no_val && String(id_no_val).trim() !== "") {
+           const legacyStr = `[Legacy ID: ${id_no_val}]`
+           if (!work_remark || !work_remark.includes(legacyStr)) {
+               work_remark = `${legacyStr} ` + (work_remark || "")
+           }
+        }
+
+        // Match existing entry by ID Number, Site Name, and Order Type
+        const normalize = (s: string | null) => (s || "").trim().toLowerCase()
+        const currentSiteName = normalize(site_name)
+        const currentOrderType = normalize(order_type)
+
         let existing = null
         if (id_no && !isNaN(id_no)) {
           const matches = projectsList.filter((p) => p.id_no === id_no)
           if (matches.length > 0) {
-            const exactMatch = matches.find(p => p.site_name?.trim().toLowerCase() === site_name.trim().toLowerCase())
+            const exactMatch = matches.find(p => 
+              normalize(p.site_name) === currentSiteName &&
+              normalize(p.order_type) === currentOrderType
+            )
             if (exactMatch) {
               existing = exactMatch
             }
@@ -152,7 +167,7 @@ export function ImportExcelDialog({ open, onOpenChange, onSuccess }: ImportExcel
         }
         if (!existing && site_name) {
           existing = projectsList.find(
-            (p) => p.site_name && p.site_name.trim().toLowerCase() === site_name.trim().toLowerCase()
+            (p) => normalize(p.site_name) === currentSiteName && normalize(p.order_type) === currentOrderType
           )
         }
 
@@ -220,7 +235,6 @@ export function ImportExcelDialog({ open, onOpenChange, onSuccess }: ImportExcel
           if (final_id_no && projectsList.some(p => p.id_no === final_id_no)) {
             const maxId = projectsList.reduce((max, p) => (p.id_no && p.id_no > max ? p.id_no : max), 0)
             final_id_no = maxId + 1
-            work_remark = `[Legacy ID: ${id_no_val}] ` + (work_remark || "")
           } else if (!final_id_no) {
             const maxId = projectsList.reduce((max, p) => (p.id_no && p.id_no > max ? p.id_no : max), 0)
             final_id_no = maxId + 1
@@ -285,7 +299,7 @@ export function ImportExcelDialog({ open, onOpenChange, onSuccess }: ImportExcel
         }
       }
 
-      toast.success(`Import completed: ${insertedCount} added, ${updatedCount} updated, ${skippedCount} skipped.`)
+      toast.success(`Import completed: ${insertedCount} added, ${updatedCount} updated, ${skippedCount} skipped. (Parsed ${parsedData.length} rows)`)
       setFile(null)
       setParsedData(null)
       onSuccess()
