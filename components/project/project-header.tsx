@@ -44,27 +44,28 @@ export function ProjectHeader({ project }: ProjectHeaderProps) {
               Back
             </Button>
           </Link>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {canEdit && (
               <Button
                 variant="outline"
                 size="sm"
-                className="text-primary border-primary/20 hover:bg-primary/10 font-bold"
+                className="text-primary border-primary/20 hover:bg-primary/10 font-bold px-2 sm:px-3"
                 onClick={() => setShowMoveCopyDialog(true)}
               >
-                <CopyPlus className="h-4 w-4 mr-2" />
-                Move / Copy Customer
+                <CopyPlus className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Move / Copy Customer</span>
+                <span className="sm:hidden">Move/Copy</span>
               </Button>
             )}
             {adminMode && (
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10 px-2 sm:px-3"
                 onClick={() => setShowDeleteDialog(true)}
               >
-                <Trash2 className="h-4 w-4 mr-2" />
-                Delete Project
+                <Trash2 className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Delete Project</span>
               </Button>
             )}
           </div>
@@ -72,7 +73,7 @@ export function ProjectHeader({ project }: ProjectHeaderProps) {
 
         <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
           <div>
-            <div className="flex items-center gap-3 mb-2">
+            <div className="flex flex-wrap items-center gap-2 mb-2">
               <Badge variant="secondary" className="bg-secondary text-secondary-foreground font-medium">
                 {project.order_type}
               </Badge>
@@ -86,12 +87,14 @@ export function ProjectHeader({ project }: ProjectHeaderProps) {
                   Firm: {project.firm_name}
                 </Badge>
               )}
-              <span className="text-sm text-muted-foreground font-medium">ID: {project.id_no}</span>
+              <Badge variant="outline" className="bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-400 font-semibold">
+                Customer Since: {project.created_at ? new Date(project.created_at).toLocaleDateString("en-IN") : "N/A"} (ID: {project.id_no})
+              </Badge>
             </div>
-            <h1 className="text-2xl font-bold text-foreground lg:text-3xl tracking-tight">
+            <h1 className="text-2xl font-bold text-foreground lg:text-3xl tracking-tight break-words">
               {project.site_name}
             </h1>
-            <p className="text-muted-foreground mt-1 max-w-2xl">{project.address}</p>
+            <p className="text-muted-foreground mt-1 max-w-2xl break-words text-sm sm:text-base">{project.address}</p>
 
             {/* Equipment Info */}
             {Boolean(project.hp_type || project.hp_qty || project.tank_type || project.tank_qty) && (
@@ -120,9 +123,9 @@ export function ProjectHeader({ project }: ProjectHeaderProps) {
             )}
           </div>
 
-          <div className="flex flex-col gap-4 lg:items-end">
+          <div className="flex flex-col gap-4 lg:items-end mt-4 lg:mt-0">
             {canEdit && (
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Link href={`/projects/${project.id}/edit`}>
                   <Button variant="outline" size="sm" className="shadow-sm">
                     <Edit className="h-4 w-4 mr-2" />

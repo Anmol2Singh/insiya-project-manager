@@ -123,24 +123,26 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
           className="max-w-[1600px] mx-auto"
         >
           <Tabs defaultValue="ledger" className="space-y-6">
-            <TabsList className="flex flex-wrap h-auto gap-2 bg-muted/50 p-1.5 w-full lg:w-fit rounded-2xl border border-border/50 shadow-sm">
-              {[
-                { value: "ledger", label: "Financial Ledger" },
-                { value: "payments", label: "Payment Terms" },
-                { value: "expenses", label: "Project Expenses" },
-                { value: "calls", label: "Call Records" },
-                { value: "checklist", label: "Checklist" },
-                { value: "remarks", label: "Work Remarks" },
-              ].map((tab) => (
-                <TabsTrigger
-                  key={tab.value}
-                  value={tab.value}
-                  className="flex-1 lg:flex-none text-xs font-bold uppercase tracking-wider px-5 py-2.5 rounded-xl data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-md transition-all"
-                >
-                  {tab.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
+            <div className="overflow-x-auto w-full max-w-full pb-2 -mb-2 no-scrollbar">
+              <TabsList className="inline-flex h-auto gap-2 bg-muted/50 p-1.5 min-w-max rounded-2xl border border-border/50 shadow-sm">
+                {[
+                  { value: "ledger", label: "Financial Ledger" },
+                  { value: "payments", label: "Payment Terms" },
+                  { value: "expenses", label: "Project Expenses" },
+                  { value: "calls", label: "Call Records" },
+                  { value: "checklist", label: "Checklist" },
+                  { value: "remarks", label: "Work Remarks" },
+                ].map((tab) => (
+                  <TabsTrigger
+                    key={tab.value}
+                    value={tab.value}
+                    className="whitespace-nowrap shrink-0 text-xs font-bold uppercase tracking-wider px-5 py-2.5 rounded-xl data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-md transition-all"
+                  >
+                    {tab.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </div>
 
             <AnimatePresence mode="wait">
               <TabsContent value="ledger" className="mt-0 focus-visible:outline-none focus-visible:ring-0">

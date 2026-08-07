@@ -50,7 +50,7 @@ export default function LoginPage() {
           <div className="w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center mb-2 shadow-inner border border-primary/20">
             <ShieldCheck className="h-7 w-7 text-primary" />
           </div>
-          <CardTitle className="text-3xl font-extrabold tracking-tight">Insiya Project Manager Login</CardTitle>
+          <CardTitle className="text-3xl font-extrabold tracking-tight">Izyheat Project Manager Login</CardTitle>
           <CardDescription className="text-base text-muted-foreground">
             Authenticate to access the project manager.
           </CardDescription>

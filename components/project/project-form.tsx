@@ -195,6 +195,7 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
     tank_qty: project?.tank_qty?.toString() || "",
     order_value: project?.order_value?.toString() || "0",
     work_remark: project?.work_remark || "",
+    created_at: project?.created_at ? new Date(project.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
   })
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -227,6 +228,7 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
         order_value: parseFloat(formData.order_value) || 0,
         work_remark: formData.work_remark || null,
         company_id: activeCompany.id,
+        created_at: new Date(formData.created_at).toISOString(),
       }
 
       if (mode === "create") {
@@ -305,6 +307,19 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
                   value={formData.id_no}
                   onChange={(e) => setFormData({ ...formData, id_no: e.target.value })}
                   placeholder="Enter Project ID"
+                  className="rounded-xl h-12 bg-muted/30 border-border/50 focus:bg-background transition-all"
+                  required
+                  disabled={!canEdit}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="created_at" className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">Creation Date</Label>
+                <Input
+                  id="created_at"
+                  type="date"
+                  value={formData.created_at}
+                  onChange={(e) => setFormData({ ...formData, created_at: e.target.value })}
                   className="rounded-xl h-12 bg-muted/30 border-border/50 focus:bg-background transition-all"
                   required
                   disabled={!canEdit}

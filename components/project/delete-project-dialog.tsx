@@ -28,6 +28,7 @@ export function DeleteProjectDialog({ open, onOpenChange, projectId, siteName }:
 
   const handleDelete = async () => {
     setLoading(true)
+    const toastId = toast.loading("Deleting project...")
     try {
       const supabase = createClient()
       
@@ -38,12 +39,14 @@ export function DeleteProjectDialog({ open, onOpenChange, projectId, siteName }:
 
       if (error) throw error
 
-      toast.success("Project deleted successfully")
+      const successMsg = "Project deleted successfully"
+      toast.success(successMsg, { id: toastId })
+      setTimeout(() => alert(successMsg), 100)
       router.push("/")
       router.refresh()
     } catch (error: any) {
       console.error("Error deleting project:", error)
-      toast.error(error.message || "Failed to delete project")
+      toast.error(error.message || "Failed to delete project", { id: toastId })
     } finally {
       setLoading(false)
       onOpenChange(false)

@@ -40,9 +40,11 @@ import {
   SlidersHorizontal,
   Trash2,
 } from "lucide-react"
-import type { ProjectSummary, CallingRecord } from "@/lib/types"
+import type { ProjectSummary, CallingRecord, WorkRemark } from "@/lib/types"
 import { ImportExcelDialog } from "./import-excel-dialog"
 import { getActiveCompany } from "@/lib/company-store"
+import { extractCityName, generateDirectoryPDF } from "@/lib/pdf-generator"
+import { getPdfColumnsConfig } from "@/lib/pdf-columns-store"
 import { createClient } from "@/lib/supabase/client"
 import { hasEditPermission } from "@/lib/auth-store"
 import { toast } from "sonner"
@@ -106,6 +108,7 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
   const handleBulkDelete = async () => {
     if (selectedIds.size === 0) return
     setDeleting(true)
+    const toastId = toast.loading(`Deleting ${selectedIds.size} customer(s)...`)
     try {
       const supabase = createClient()
       for (const id of Array.from(selectedIds)) {
@@ -118,12 +121,14 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
         await supabase.from("work_remarks").delete().eq("project_id", id)
         await supabase.from("projects").delete().eq("id", id)
       }
-      toast.success(`${selectedIds.size} customer(s) deleted successfully`)
+      const successMsg = `${selectedIds.size} customer(s) deleted successfully`
+      toast.success(successMsg, { id: toastId })
+      setTimeout(() => alert(successMsg), 100)
       setSelectedIds(new Set())
       setDeleteConfirmOpen(false)
-      onRefresh && onRefresh()
+      if (onRefresh) onRefresh()
     } catch (err: any) {
-      toast.error(err.message || "Failed to delete customers")
+      toast.error(err.message || "Failed to delete customers", { id: toastId })
     } finally {
       setDeleting(false)
     }
@@ -176,13 +181,6 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
     )
   }
 
-  const formatPdfCurrency = (value: number) => {
-    return "Rs. " + new Intl.NumberFormat("en-IN", {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(value)
-  }
-
   const formatDate = (dateStr: string | null | undefined) => {
     if (!dateStr) return "-"
     try {
@@ -198,129 +196,34 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
     }
   }
 
-  const extractCityName = (address: string | null | undefined): string => {
-    if (!address || !address.trim()) return "-"
-    
-    let cleaned = address
-      .replace(/-\s*\d{5,6}|\b\d{5,6}\b/g, "")
-      .replace(/\b(India|IN)\b/gi, "")
-      .trim()
+  const handleGeneratePDF = async () => {
+    let callRemarkMap: Record<string, string> = {}
+    let workRemarkMap: Record<string, string> = {}
+    try {
+      const supabase = createClient()
+      
+      const [callRes, workRes] = await Promise.all([
+        supabase.from("calling_records").select("*").order("created_at", { ascending: false }),
+        supabase.from("work_remarks").select("*").order("date", { ascending: false })
+      ])
 
-    if (!cleaned) return address.trim()
-
-    const fillerRegex = /\b(Opp|Opposite|Near|Behind|Beside|Telephone|Exchange|Road|Street|Flat|Plot|Bldg|Building|Villa|Society|Phase|Sector|LTD|Pvt)\b/gi
-
-    if (cleaned.includes(",")) {
-      const parts = cleaned.split(",").map((p) => p.trim()).filter(Boolean)
-      if (parts.length > 0) {
-        let candidate = parts[parts.length - 1]
-        const stateRegex = /\b(Maharashtra|Gujarat|Karnataka|Goa|Delhi|Haryana|Tamil Nadu|Telangana|Uttar Pradesh|Madhya Pradesh|Rajasthan|UP|MP|AP)\b/i
-        if (parts.length > 1 && stateRegex.test(candidate)) {
-          candidate = parts[parts.length - 2]
+      callRes.data?.forEach((rec: CallingRecord) => {
+        if (!callRemarkMap[rec.project_id] && rec.description) {
+          callRemarkMap[rec.project_id] = rec.description
         }
-        candidate = candidate.replace(fillerRegex, "").trim()
-        if (candidate) {
-          const words = candidate.split(/\s+/).filter(Boolean)
-          return words.slice(-2).join(" ")
+      })
+
+      workRes.data?.forEach((rec: any) => {
+        if (!workRemarkMap[rec.project_id] && rec.remark) {
+          workRemarkMap[rec.project_id] = rec.remark
         }
-      }
+      })
+    } catch (e) {
+      console.warn("Could not fetch remarks for pdf export:", e)
     }
 
-    const words = cleaned.replace(fillerRegex, "").split(/\s+/).filter(Boolean)
-    if (words.length <= 2) return words.join(" ")
-    
-    const stateRegex = /^(Maharashtra|Gujarat|Karnataka|Goa|Delhi|Haryana|TamilNadu|Telangana|UP|MP|Rajasthan)$/i
-    if (words.length > 2 && stateRegex.test(words[words.length - 1])) {
-      return words.slice(-2, -1).join(" ")
-    }
-
-    return words.slice(-2).join(" ")
-  }
-
-  const handleGeneratePDF = () => {
-    const doc = new jsPDF("landscape")
-    const pageWidth = doc.internal.pageSize.width
-    const compName = getActiveCompany()?.name || "Insiya Solar Industry"
-
-    // B&W Crisp Print Header
-    doc.setTextColor(0, 0, 0)
-    doc.setFontSize(18)
-    doc.setFont("helvetica", "bold")
-    doc.text(compName, 14, 15)
-
-    doc.setFontSize(9)
-    doc.setFont("helvetica", "bold")
-    doc.text("CUSTOMER DIRECTORY & SUMMARY REPORT", pageWidth - 14, 15, { align: "right" })
-
-    // Double Line Separator
-    doc.setLineWidth(0.8)
-    doc.setDrawColor(0, 0, 0)
-    doc.line(14, 18.5, pageWidth - 14, 18.5)
-    doc.setLineWidth(0.2)
-    doc.line(14, 19.5, pageWidth - 14, 19.5)
-
-    doc.setFontSize(8)
-    doc.setFont("helvetica", "normal")
-    doc.text(`Generated Date: ${new Date().toLocaleDateString("en-IN")}`, 14, 25)
-
-    const tableHeaders = ["S No.", "Customer Name", "Mobile No.", "ID", "Type", "Firm Name", "Party Print", "Sales Man", "City / Locality", "Order Value", "Extra Work", "Payment Recd", "Balance", "Remark"]
-    const tableRows = sortedProjects.map((p, idx) => [
-      idx + 1,
-      p.site_name,
-      p.mobile_number || "-",
-      p.id_no,
-      p.order_type,
-      p.firm_name || "-",
-      p.party_print_name || "-",
-      p.salesman_name || "-",
-      extractCityName(p.address),
-      formatPdfCurrency(p.order_value),
-      formatPdfCurrency(p.extra_work_value || 0),
-      formatPdfCurrency(p.payment_received),
-      formatPdfCurrency(p.balance),
-      p.work_remark || "-",
-    ])
-
-    autoTable(doc, {
-      head: [tableHeaders],
-      body: tableRows,
-      startY: 28,
-      theme: "grid",
-      headStyles: {
-        fillColor: [240, 240, 240],
-        textColor: [0, 0, 0],
-        fontSize: 8.5,
-        fontStyle: "bold",
-        lineWidth: 0.2,
-        lineColor: [120, 120, 120],
-      },
-      styles: {
-        fontSize: 8,
-        cellPadding: 3,
-        textColor: [0, 0, 0],
-        lineWidth: 0.2,
-        lineColor: [120, 120, 120],
-      },
-      columnStyles: {
-        0: { cellWidth: 10, halign: "center" },
-        1: { cellWidth: 40, fontStyle: "bold", fontSize: 8.5, textColor: [0, 0, 0] }, // Customer Name
-        2: { cellWidth: 20, halign: "center" }, // Mobile No.
-        3: { cellWidth: 10, halign: "center" }, // ID
-        4: { cellWidth: 15 }, // Type
-        5: { cellWidth: 18 }, // Firm Name
-        6: { cellWidth: 18 }, // Party Print
-        7: { cellWidth: 18 }, // Sales Man
-        8: { cellWidth: 20 }, // City
-        9: { cellWidth: 18, halign: "right" },
-        10: { cellWidth: 16, halign: "right" },
-        11: { cellWidth: 18, halign: "right" },
-        12: { cellWidth: 18, halign: "right", fontStyle: "bold" },
-        13: { cellWidth: "auto" },
-      },
-    })
-
-    const cleanCompName = compName.replace(/[^a-zA-Z0-9]/g, "_")
-    doc.save(`${cleanCompName}_Directory_${new Date().toISOString().slice(0, 10)}.pdf`)
+    const columnsConfig = getPdfColumnsConfig()
+    await generateDirectoryPDF(sortedProjects, "CUSTOMER DIRECTORY & SUMMARY REPORT", callRemarkMap, workRemarkMap, columnsConfig)
   }
 
   const handleExportExcel = async () => {
@@ -328,20 +231,27 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
     const compName = getActiveCompany()?.name || "Insiya Solar Industry"
 
     let callRemarkMap: Record<string, string> = {}
+    let workRemarkMap: Record<string, string> = {}
     try {
       const supabase = createClient()
-      const { data: callRecords } = await supabase
-        .from("calling_records")
-        .select("*")
-        .order("created_at", { ascending: false })
+      const [callRes, workRes] = await Promise.all([
+        supabase.from("calling_records").select("*").order("created_at", { ascending: false }),
+        supabase.from("work_remarks").select("*").order("date", { ascending: false })
+      ])
 
-      callRecords?.forEach((rec: CallingRecord) => {
+      callRes.data?.forEach((rec: CallingRecord) => {
         if (!callRemarkMap[rec.project_id] && rec.description) {
           callRemarkMap[rec.project_id] = rec.description
         }
       })
+
+      workRes.data?.forEach((rec: any) => {
+        if (!workRemarkMap[rec.project_id] && rec.remark) {
+          workRemarkMap[rec.project_id] = rec.remark
+        }
+      })
     } catch (e) {
-      console.warn("Could not fetch calling records for excel export:", e)
+      console.warn("Could not fetch remarks for excel export:", e)
     }
 
     const exportData = sortedProjects.map((p, idx) => {
@@ -367,7 +277,7 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
         "Extra Work Value (Rs)": p.extra_work_value || 0,
         "Payment Received (Rs)": p.payment_received,
         "Outstanding Balance (Rs)": p.balance,
-        "Last Work Remark": p.work_remark || "",
+        "Last Work Remark": workRemarkMap[p.id] || p.work_remark || "",
         "Last Call Remark": callRemarkMap[p.id] || "",
       }
     })
@@ -497,6 +407,7 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
                   >
                     Customer / Site Name <SortIcon field="site_name" />
                   </TableHead>
+                  <TableHead className="w-[150px] font-bold text-foreground uppercase text-[10px] tracking-widest py-4">Party Print Name</TableHead>
                   <TableHead className="font-bold text-foreground uppercase text-[10px] tracking-widest py-4">Mobile No.</TableHead>
                   <TableHead className="font-bold text-foreground uppercase text-[10px] tracking-widest py-4">Address</TableHead>
                   <TableHead
@@ -551,6 +462,9 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
                       </TableCell>
                       <TableCell className="max-w-[200px] truncate font-bold text-foreground">
                         {project.site_name}
+                      </TableCell>
+                      <TableCell className="max-w-[150px] truncate font-semibold text-muted-foreground text-xs">
+                        {project.party_print_name || "-"}
                       </TableCell>
                       <TableCell className="text-xs font-semibold text-muted-foreground">
                         {project.mobile_number || "-"}

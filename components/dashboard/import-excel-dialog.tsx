@@ -34,6 +34,7 @@ export function ImportExcelDialog({ open, onOpenChange, onSuccess }: ImportExcel
     const templateData = [
       {
         "ID Number": 1001,
+        "Creation Date": "01-08-2026",
         "Site Name": "Sample Customer Site 1",
         "Mobile Number": "+91 9876543210",
         "Address": "Pune, Maharashtra",
@@ -50,6 +51,7 @@ export function ImportExcelDialog({ open, onOpenChange, onSuccess }: ImportExcel
       },
       {
         "ID Number": 1002,
+        "Creation Date": "05-08-2026",
         "Site Name": "Sample Customer Site 2",
         "Mobile Number": "+91 9123456789",
         "Address": "Mumbai, Maharashtra",
@@ -138,6 +140,28 @@ export function ImportExcelDialog({ open, onOpenChange, onSuccess }: ImportExcel
         const tank_qty = tank_qty_raw !== undefined && tank_qty_raw !== null && tank_qty_raw !== "" ? parseInt(tank_qty_raw) : null
 
         let work_remark = row["Remark"] || row["Work Remark"] || row["Last Work Remark"] || row["work_remark"] || null
+
+        let created_at: string | undefined = undefined;
+        const rawDate = row["Creation Date"] || row["Date"] || row["created_at"];
+        if (rawDate) {
+          // Attempt to parse date (assuming DD-MM-YYYY or Excel serial)
+          if (typeof rawDate === 'number') {
+            // Excel serial date to JS Date
+            const d = new Date((rawDate - (25567 + 2)) * 86400 * 1000)
+            if (!isNaN(d.getTime())) created_at = d.toISOString()
+          } else if (typeof rawDate === 'string') {
+            // Very basic DD-MM-YYYY to ISO (this could be improved based on exact format)
+            const parts = rawDate.split(/[-/]/);
+            if (parts.length === 3) {
+               // Assuming DD-MM-YYYY
+               const d = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+               if (!isNaN(d.getTime())) created_at = d.toISOString();
+            } else {
+               const d = new Date(rawDate);
+               if (!isNaN(d.getTime())) created_at = d.toISOString();
+            }
+          }
+        }
 
         // ALWAYS preserve the original raw ID in the remark if it's provided in the CSV
         if (id_no_val && String(id_no_val).trim() !== "") {
@@ -262,6 +286,7 @@ export function ImportExcelDialog({ open, onOpenChange, onSuccess }: ImportExcel
             m_balance: 0,
             company_id: targetCompanyId,
           }
+          if (created_at) insertPayload.created_at = created_at;
 
           const { data: newProject, error } = await supabase.from("projects").insert(insertPayload).select().single()
           
@@ -299,7 +324,9 @@ export function ImportExcelDialog({ open, onOpenChange, onSuccess }: ImportExcel
         }
       }
 
-      toast.success(`Import completed: ${insertedCount} added, ${updatedCount} updated, ${skippedCount} skipped. (Parsed ${parsedData.length} rows)`)
+      const successMsg = `Import completed: ${insertedCount} added, ${updatedCount} updated, ${skippedCount} skipped. (Parsed ${parsedData.length} rows)`
+      toast.success(successMsg)
+      setTimeout(() => alert(successMsg), 100)
       setFile(null)
       setParsedData(null)
       onSuccess()

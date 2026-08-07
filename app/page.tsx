@@ -69,6 +69,7 @@ export default function DashboardPage() {
     const orderType = (project.order_type || "").toString().toLowerCase()
     const idNo = project.id_no != null ? String(project.id_no).toLowerCase() : ""
     const workRemark = (project.work_remark || "").toString().toLowerCase()
+    const partyName = (project.party_print_name || "").toString().toLowerCase()
 
     return (
       siteName.includes(query) ||
@@ -76,7 +77,8 @@ export default function DashboardPage() {
       address.includes(query) ||
       orderType.includes(query) ||
       idNo.includes(query) ||
-      workRemark.includes(query)
+      workRemark.includes(query) ||
+      partyName.includes(query)
     )
   })
 

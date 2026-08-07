@@ -6,6 +6,8 @@ import { createClient } from "@/lib/supabase/client"
 import { getActiveCompany } from "@/lib/company-store"
 import { getDropdownCategories, DEFAULT_ORDER_TYPES } from "@/lib/dropdown-store"
 import { hasEditPermission } from "@/lib/auth-store"
+import { extractCityName, generateDirectoryPDF } from "@/lib/pdf-generator"
+import { getPdfColumnsConfig } from "@/lib/pdf-columns-store"
 import type { Project, CallingRecord } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -101,7 +103,8 @@ export default function FilterProjectsPage() {
         const mobile = (p.mobile_number || "").toLowerCase()
         const addr = (p.address || "").toLowerCase()
         const idNo = String(p.id_no || "")
-        if (!name.includes(q) && !mobile.includes(q) && !addr.includes(q) && !idNo.includes(q)) {
+        const partyName = (p.party_print_name || "").toLowerCase()
+        if (!name.includes(q) && !mobile.includes(q) && !addr.includes(q) && !idNo.includes(q) && !partyName.includes(q)) {
           return false
         }
       }
@@ -139,123 +142,66 @@ export default function FilterProjectsPage() {
     }
   }
 
-  const extractCityName = (address: string): string => {
-    if (!address) return "-"
-    const cleaned = address.trim()
-    const fillerRegex = /(?:Tal(?:uka)?|Dist(?:rict)?|City|State|Maharashtra|India|Pin|\b\d{6}\b|[:-])/gi
-    const commaIndex = cleaned.lastIndexOf(",")
-    if (commaIndex !== -1 && commaIndex < cleaned.length - 1) {
-      let candidate = cleaned.substring(commaIndex + 1).trim()
-      candidate = candidate.replace(fillerRegex, "").trim()
-      if (candidate) {
-        const words = candidate.split(/\s+/).filter(Boolean)
-        return words.slice(-2).join(" ")
-      }
-    }
-    const words = cleaned.replace(fillerRegex, "").split(/\s+/).filter(Boolean)
-    if (words.length <= 2) return words.join(" ")
-    return words.slice(-2).join(" ")
-  }
-
   // Filtered PDF Export
-  const handleGeneratePDF = () => {
-    const doc = new jsPDF("landscape")
-    const pageWidth = doc.internal.pageSize.width
-    const compName = getActiveCompany()?.name || "Insiya Solar Industry"
+  const handleGeneratePDF = async () => {
+    let callRemarkMap: Record<string, string> = {}
+    let workRemarkMap: Record<string, string> = {}
+    
+    try {
+      const supabase = createClient()
+      const [callRes, workRes] = await Promise.all([
+        supabase.from("calling_records").select("*").order("created_at", { ascending: false }),
+        supabase.from("work_remarks").select("*").order("date", { ascending: false })
+      ])
 
-    doc.setTextColor(0, 0, 0)
-    doc.setFontSize(18)
-    doc.setFont("helvetica", "bold")
-    doc.text(compName, 14, 15)
+      callRes.data?.forEach((rec: CallingRecord) => {
+        if (!callRemarkMap[rec.project_id] && rec.description) {
+          callRemarkMap[rec.project_id] = rec.description
+        }
+      })
 
-    doc.setFontSize(9)
-    doc.setFont("helvetica", "bold")
-    doc.text("FILTERED CUSTOMER DIRECTORY REPORT", pageWidth - 14, 15, { align: "right" })
+      workRes.data?.forEach((rec: any) => {
+        if (!workRemarkMap[rec.project_id] && rec.remark) {
+          workRemarkMap[rec.project_id] = rec.remark
+        }
+      })
+    } catch (e) {
+      console.warn("Could not fetch remarks for pdf export:", e)
+    }
 
-    doc.setLineWidth(0.8)
-    doc.setDrawColor(0, 0, 0)
-    doc.line(14, 18.5, pageWidth - 14, 18.5)
-    doc.setLineWidth(0.2)
-    doc.line(14, 19.5, pageWidth - 14, 19.5)
-
-    doc.setFontSize(8)
-    doc.setFont("helvetica", "normal")
-    doc.text(`Generated Date: ${new Date().toLocaleDateString("en-IN")} | Total Results: ${filteredProjects.length}`, 14, 25)
-
-    const tableHeaders = ["S No.", "Customer Name", "Mobile No.", "ID", "Type", "Sales Man", "City / Locality", "Order Value", "Extra Work", "Payment Recd", "Balance", "Remark"]
-    const tableRows = filteredProjects.map((p, idx) => [
-      idx + 1,
-      p.site_name,
-      p.mobile_number || "-",
-      p.id_no,
-      p.order_type,
-      p.salesman_name || "-",
-      extractCityName(p.address),
-      formatPdfCurrency(p.order_value),
-      formatPdfCurrency(p.extra_work_value || 0),
-      formatPdfCurrency(p.payment_received),
-      formatPdfCurrency(p.balance),
-      p.work_remark || "-",
-    ])
-
-    autoTable(doc, {
-      head: [tableHeaders],
-      body: tableRows,
-      startY: 28,
-      theme: "grid",
-      headStyles: {
-        fillColor: [240, 240, 240],
-        textColor: [0, 0, 0],
-        fontSize: 8.5,
-        fontStyle: "bold",
-        lineWidth: 0.2,
-        lineColor: [120, 120, 120],
-      },
-      styles: {
-        fontSize: 8,
-        cellPadding: 3,
-        textColor: [0, 0, 0],
-        lineWidth: 0.2,
-        lineColor: [120, 120, 120],
-      },
-      columnStyles: {
-        0: { cellWidth: 10, halign: "center" },
-        1: { cellWidth: 50, fontStyle: "bold", fontSize: 8.5 }, // Customer Name
-        2: { cellWidth: 22, halign: "center" }, // Mobile No.
-        3: { cellWidth: 11, halign: "center" },
-        4: { cellWidth: 20 },
-        5: { cellWidth: 20 }, // Sales Man
-        6: { cellWidth: 22 },
-        7: { cellWidth: 21, halign: "right" },
-        8: { cellWidth: 18, halign: "right" },
-        9: { cellWidth: 21, halign: "right" },
-        10: { cellWidth: 21, halign: "right", fontStyle: "bold" },
-        11: { cellWidth: "auto" },
-      },
-    })
-
-    const cleanCompName = compName.replace(/[^a-zA-Z0-9]/g, "_")
-    doc.save(`${cleanCompName}_Filtered_Report_${new Date().toISOString().slice(0, 10)}.pdf`)
+    const columnsConfig = getPdfColumnsConfig()
+    await generateDirectoryPDF(filteredProjects, "FILTERED CUSTOMER DIRECTORY REPORT", callRemarkMap, workRemarkMap, columnsConfig)
   }
 
   // Filtered Excel Export
   const handleExportExcel = async () => {
     const todayStr = new Date().toLocaleDateString("en-IN")
-    const compName = getActiveCompany().name
-    const supabase = createClient()
+    const compName = getActiveCompany()?.name || "Insiya Solar Industry"
 
-    // Fetch latest call record per project
-    const { data: callRecords } = await supabase
-      .from("calling_records")
-      .select("*")
-      .order("created_at", { ascending: false })
+    let callRemarkMap: Record<string, string> = {}
+    let workRemarkMap: Record<string, string> = {}
+    
+    try {
+      const supabase = createClient()
+      const [callRes, workRes] = await Promise.all([
+        supabase.from("calling_records").select("*").order("created_at", { ascending: false }),
+        supabase.from("work_remarks").select("*").order("date", { ascending: false })
+      ])
 
-    const callRemarkMap: Record<string, string> = {}
-    callRecords?.forEach((rec: CallingRecord) => {
-      if (!callRemarkMap[rec.project_id] && rec.description) {
-        callRemarkMap[rec.project_id] = rec.description
-      }
-    })
+      callRes.data?.forEach((rec: CallingRecord) => {
+        if (!callRemarkMap[rec.project_id] && rec.description) {
+          callRemarkMap[rec.project_id] = rec.description
+        }
+      })
+
+      workRes.data?.forEach((rec: any) => {
+        if (!workRemarkMap[rec.project_id] && rec.remark) {
+          workRemarkMap[rec.project_id] = rec.remark
+        }
+      })
+    } catch (e) {
+      console.warn("Could not fetch remarks for excel export:", e)
+    }
 
     const exportData = filteredProjects.map((p, idx) => {
       const clearanceDate = p.balance !== 0
@@ -280,7 +226,7 @@ export default function FilterProjectsPage() {
         "Extra Work Value (Rs)": p.extra_work_value || 0,
         "Payment Received (Rs)": p.payment_received,
         "Outstanding Balance (Rs)": p.balance,
-        "Last Work Remark": p.work_remark || "",
+        "Last Work Remark": workRemarkMap[p.id] || p.work_remark || "",
         "Last Call Remark": callRemarkMap[p.id] || "",
       }
     })
@@ -456,7 +402,8 @@ export default function FilterProjectsPage() {
                     <TableRow className="bg-muted/50 border-b">
                       <TableHead className="font-bold uppercase text-[10px] py-4">ID</TableHead>
                       <TableHead className="font-bold uppercase text-[10px] py-4">Type</TableHead>
-                      <TableHead className="font-bold uppercase text-[10px] py-4">Customer Name</TableHead>
+                      <TableHead className="w-[150px] font-bold uppercase text-[10px] py-4">Customer Name</TableHead>
+                      <TableHead className="w-[120px] font-bold uppercase text-[10px] py-4">Party Print Name</TableHead>
                       <TableHead className="font-bold uppercase text-[10px] py-4">Mobile No.</TableHead>
                       <TableHead className="font-bold uppercase text-[10px] py-4">Address</TableHead>
                       <TableHead className="text-right font-bold uppercase text-[10px] py-4">Order Value</TableHead>
@@ -475,15 +422,14 @@ export default function FilterProjectsPage() {
                             {project.order_type}
                           </Badge>
                         </TableCell>
-                        <TableCell className="font-bold text-foreground max-w-[200px] truncate">
+                        <TableCell className="font-bold text-foreground max-w-[150px] truncate">
                           {project.site_name}
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground font-semibold">
-                          {project.mobile_number || "-"}
+                        <TableCell className="font-semibold text-muted-foreground text-xs max-w-[120px] truncate">
+                          {project.party_print_name || "-"}
                         </TableCell>
-                        <TableCell className="max-w-[200px] truncate text-xs text-muted-foreground">
-                          {project.address}
-                        </TableCell>
+                        <TableCell className="text-xs font-semibold text-muted-foreground">{project.mobile_number || "-"}</TableCell>
+                        <TableCell className="max-w-[150px] truncate text-muted-foreground text-xs">{project.address}</TableCell>
                         <TableCell className="text-right font-mono text-xs">
                           {formatCurrency(project.order_value)}
                         </TableCell>

@@ -1,3 +1,5 @@
+import { createClient } from "@/lib/supabase/client"
+
 export interface Company {
   id: string
   name: string
@@ -36,7 +38,34 @@ export function getCompanies(): Company[] {
   return DEFAULT_COMPANIES
 }
 
-export function saveCompanies(companies: Company[]) {
+export async function syncCompaniesFromDB(): Promise<Company[] | null> {
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from("app_settings")
+    .select("value")
+    .eq("id", "app_companies_list")
+    .single()
+
+  if (!error && data && Array.isArray(data.value)) {
+    saveCompaniesLocal(data.value as Company[])
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("storage")) // Trigger storage event for local hooks
+    }
+    return data.value as Company[]
+  }
+  return null
+}
+
+export async function saveCompanies(companies: Company[]) {
+  saveCompaniesLocal(companies)
+  const supabase = createClient()
+  await supabase.from("app_settings").upsert({
+    id: "app_companies_list",
+    value: companies,
+  })
+}
+
+function saveCompaniesLocal(companies: Company[]) {
   if (typeof window !== "undefined") {
     const listToSave = Array.isArray(companies) && companies.length > 0 ? companies : DEFAULT_COMPANIES
     localStorage.setItem("app_companies_list", JSON.stringify(listToSave))
@@ -58,13 +87,13 @@ export function setActiveCompanyId(id: string) {
   }
 }
 
-export function deleteCompany(id: string) {
+export async function deleteCompany(id: string) {
   if (typeof window !== "undefined") {
     let companies = getCompanies().filter((c) => c && c.id !== id)
     if (companies.length === 0) {
       companies = DEFAULT_COMPANIES
     }
-    saveCompanies(companies)
+    await saveCompanies(companies)
     localStorage.removeItem(`checklist_app_local_db_${id}`)
     const activeId = localStorage.getItem("active_company_id")
     if (activeId === id) {

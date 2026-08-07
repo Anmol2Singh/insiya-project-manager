@@ -43,11 +43,13 @@ import {
   getActiveCompany,
   setActiveCompanyId,
   deleteCompany,
+  syncCompaniesFromDB,
   type Company,
 } from "@/lib/company-store"
 import { clearSession, isAdmin, hasEditPermission } from "@/lib/auth-store"
 import { ChangeCredentialsDialog } from "@/components/auth/change-credentials-dialog"
 import { ManageUsersDialog } from "@/components/auth/manage-users-dialog"
+import { PdfColumnsDialog } from "@/components/dashboard/pdf-columns-dialog"
 import { toast } from "sonner"
 
 interface DashboardHeaderProps {
@@ -66,6 +68,7 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
   const [addCompanyOpen, setAddCompanyOpen] = useState(false)
   const [changeCredsOpen, setChangeCredsOpen] = useState(false)
   const [manageUsersOpen, setManageUsersOpen] = useState(false)
+  const [pdfColumnsOpen, setPdfColumnsOpen] = useState(false)
   const [newCompanyName, setNewCompanyName] = useState("")
   const [newCompanyTagline, setNewCompanyTagline] = useState("")
   const [mounted, setMounted] = useState(false)
@@ -84,6 +87,11 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
 
       setCompaniesList(getCompanies())
       setActiveComp(getActiveCompany())
+      syncCompaniesFromDB().then((comps) => {
+        if (comps && comps.length > 0) {
+          setCompaniesList(comps)
+        }
+      })
     }
   }, [])
 
@@ -95,7 +103,7 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
     window.location.reload()
   }
 
-  const handleAddCompanySubmit = (e: React.FormEvent) => {
+  const handleAddCompanySubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     const trimmedName = newCompanyName.trim()
     if (!trimmedName) return
@@ -108,7 +116,7 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
     }
 
     const updated = [...companies, newCompanyObj]
-    saveCompanies(updated)
+    await saveCompanies(updated)
     setCompaniesList(updated)
     setActiveCompanyId(newId)
     setActiveComp(newCompanyObj)
@@ -388,7 +396,7 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
                 <div className="h-10 w-10 rounded-full bg-primary flex items-center justify-center shrink-0 shadow-sm">
                   <Building2 className="h-5 w-5 text-primary-foreground" />
                 </div>
-                <div className="flex flex-col items-start gap-0.5 max-w-[200px] sm:max-w-[300px]">
+                <div className="flex flex-col items-start gap-0.5 max-w-[130px] sm:max-w-[300px]">
                   <span className="text-base sm:text-lg font-extrabold truncate w-full leading-tight text-foreground">
                     {mounted ? activeCompany.name : "Loading..."}
                   </span>
@@ -503,10 +511,10 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
           )}
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
           <Link href="/projects/new">
-            <Button className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20 rounded-2xl h-11 px-6 font-bold">
-              <Plus className="h-4 w-4 mr-2" />
+            <Button className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20 rounded-2xl h-11 px-3 sm:px-6 font-bold">
+              <Plus className="h-4 w-4 sm:mr-2" />
               <span className="hidden sm:inline">Add Customer</span>
             </Button>
           </Link>
@@ -526,7 +534,7 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
 
       {/* Settings Dialog */}
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent className="max-w-lg rounded-3xl p-6">
+        <DialogContent className="max-w-lg rounded-3xl p-6 max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold flex items-center gap-2">
               <Settings className="h-5 w-5 text-primary" />
@@ -595,6 +603,24 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
               </div>
             </div>
 
+            {/* PDF Export Settings */}
+            <div className="bg-muted/30 p-4 rounded-2xl border border-border/50 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-bold text-sm">PDF Export Columns</h4>
+                  <p className="text-xs text-muted-foreground">Choose columns for Directory PDF</p>
+                </div>
+                <Button
+                  type="button"
+                  onClick={() => setPdfColumnsOpen(true)}
+                  variant="outline"
+                  className="rounded-xl font-bold text-xs h-9 px-3"
+                >
+                  Configure
+                </Button>
+              </div>
+            </div>
+
             {/* Manage Created Companies */}
             <div className="space-y-3">
               <h4 className="font-bold text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
@@ -630,9 +656,9 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
                           type="button"
                           variant="ghost"
                           size="sm"
-                          onClick={() => {
+                          onClick={async () => {
                             if (confirm(`Are you sure you want to delete company database "${comp.name}"? This action cannot be undone.`)) {
-                              deleteCompany(comp.id)
+                              await deleteCompany(comp.id)
                               const updated = getCompanies()
                               setCompaniesList(updated)
                               const newActive = getActiveCompany()
@@ -663,9 +689,8 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
         </DialogContent>
       </Dialog>
       <ChangeCredentialsDialog open={changeCredsOpen} onOpenChange={setChangeCredsOpen} />
-
-      {/* Manage Users Dialog (Admin Only) */}
       <ManageUsersDialog open={manageUsersOpen} onOpenChange={setManageUsersOpen} />
+      <PdfColumnsDialog open={pdfColumnsOpen} onOpenChange={setPdfColumnsOpen} />
 
       {/* Add Company Dialog */}
       <Dialog open={addCompanyOpen} onOpenChange={setAddCompanyOpen}>

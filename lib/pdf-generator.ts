@@ -2,6 +2,7 @@ import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 import type {
   Project,
+  ProjectSummary,
   LedgerEntry,
   PaymentTerm,
   Expense,
@@ -222,7 +223,7 @@ export function generateProjectLedgerPDF(
 
   currentY += 3
 
-  const ledgerHeaders = [["Sr", "Date", "Type", "Particulars", "Bill", "Sales M", "M Out", "Order Val", "Extra Wrk", "Received"]]
+  const ledgerHeaders = [["Sr", "Date", "Type", "Particulars", "Bill", "Ref No", "Inv No", "Sales M", "M Out", "Order Val", "Extra Wrk", "Received"]]
 
   let salesMSum = 0
   let mOutSum = 0
@@ -243,6 +244,8 @@ export function generateProjectLedgerPDF(
       e.payment_type || "-",
       e.particulars || "-",
       e.payment_receipt ? "Receipt" : e.bill_submitted ? "Bill" : "No",
+      e.reference_number || "-",
+      e.invoice_no || "-",
       formatCurrency(e.sales_m_value),
       formatCurrency(e.m_outward_value),
       formatCurrency(e.order_value),
@@ -254,7 +257,7 @@ export function generateProjectLedgerPDF(
   // Merge columns 0 to 4 for NET TOTALS row
   if (entries.length > 0) {
     ledgerBody.push([
-      { content: "NET TOTALS", colSpan: 5, styles: { halign: "center", fontStyle: "bold", fillColor: [230, 230, 230] } },
+      { content: "NET TOTALS", colSpan: 7, styles: { halign: "center", fontStyle: "bold", fillColor: [230, 230, 230] } },
       formatCurrency(salesMSum),
       formatCurrency(mOutSum),
       formatCurrency(orderSum),
@@ -285,16 +288,18 @@ export function generateProjectLedgerPDF(
       lineColor: borderLine,
     },
     columnStyles: {
-      0: { cellWidth: 8, halign: "center" },
-      1: { cellWidth: 18, halign: "center" },
-      2: { cellWidth: 14, halign: "center" },
-      3: { cellWidth: 36, halign: "left" },
-      4: { cellWidth: 12, halign: "center" },
-      5: { cellWidth: 18, halign: "right" },
-      6: { cellWidth: 18, halign: "right" },
-      7: { cellWidth: 21, halign: "right" },
-      8: { cellWidth: 17, halign: "right" },
-      9: { cellWidth: 20, halign: "right", fontStyle: "bold" },
+      0: { cellWidth: 5, halign: "center" },
+      1: { cellWidth: 16, halign: "center" },
+      2: { cellWidth: 10, halign: "center" },
+      3: { cellWidth: 22, halign: "left" },
+      4: { cellWidth: 11, halign: "center" },
+      5: { cellWidth: 16, halign: "center" },
+      6: { cellWidth: 16, halign: "center" },
+      7: { cellWidth: 16, halign: "right" },
+      8: { cellWidth: 16, halign: "right" },
+      9: { cellWidth: 18, halign: "right" },
+      10: { cellWidth: 18, halign: "right" },
+      11: { cellWidth: 18, halign: "right", fontStyle: "bold" },
     },
     didParseCell: (data) => {
       if (data.row.index === ledgerBody.length - 1 && entries.length > 0) {
@@ -606,4 +611,125 @@ export function generateProjectLedgerPDF(
   const cleanSiteName = project.site_name.replace(/[^a-zA-Z0-9]/g, "_")
   const cleanCompName = companyName.replace(/[^a-zA-Z0-9]/g, "_")
   doc.save(`${cleanCompName}_Report_${cleanSiteName}_${project.id_no}.pdf`)
+}
+
+export function extractCityName(address: string | null | undefined): string {
+  if (!address) return "-"
+  const cleaned = address.trim()
+  const fillerRegex = /(?:Tal(?:uka)?|Dist(?:rict)?|City|State|Maharashtra|India|Pin|\b\d{6}\b|[:-])/gi
+  const commaIndex = cleaned.lastIndexOf(",")
+  if (commaIndex !== -1 && commaIndex < cleaned.length - 1) {
+    let candidate = cleaned.substring(commaIndex + 1).trim()
+    candidate = candidate.replace(fillerRegex, "").trim()
+    if (candidate) {
+      const words = candidate.split(/\s+/).filter(Boolean)
+      return words.slice(-2).join(" ")
+    }
+  }
+  const words = cleaned.replace(fillerRegex, "").split(/\s+/).filter(Boolean)
+  if (words.length <= 2) return words.join(" ")
+  
+  const stateRegex = /^(Maharashtra|Gujarat|Karnataka|Goa|Delhi|Haryana|TamilNadu|Telangana|UP|MP|Rajasthan)$/i
+  if (words.length > 2 && stateRegex.test(words[words.length - 1])) {
+    return words.slice(-2, -1).join(" ")
+  }
+
+  return words.slice(-2).join(" ")
+}
+
+export function formatPdfCurrency(val: number | null | undefined): string {
+  return `Rs. ${(val || 0).toLocaleString("en-IN")}`
+}
+
+export async function generateDirectoryPDF(
+  projects: (Project | ProjectSummary)[],
+  title: string,
+  callRemarkMap: Record<string, string>,
+  workRemarkMap: Record<string, string>,
+  columnsConfig: Record<string, boolean>
+) {
+  const doc = new jsPDF("landscape")
+  const pageWidth = doc.internal.pageSize.width
+  const compName = getActiveCompany()?.name || "Insiya Solar Industry"
+
+  // B&W Crisp Print Header
+  doc.setTextColor(0, 0, 0)
+  doc.setFontSize(18)
+  doc.setFont("helvetica", "bold")
+  doc.text(compName, 14, 15)
+
+  doc.setFontSize(9)
+  doc.setFont("helvetica", "bold")
+  doc.text(title, pageWidth - 14, 15, { align: "right" })
+
+  // Double Line Separator
+  doc.setLineWidth(0.8)
+  doc.setDrawColor(0, 0, 0)
+  doc.line(14, 18.5, pageWidth - 14, 18.5)
+  doc.setLineWidth(0.2)
+  doc.line(14, 19.5, pageWidth - 14, 19.5)
+
+  doc.setFontSize(8)
+  doc.setFont("helvetica", "normal")
+  doc.text(`Generated Date: ${new Date().toLocaleDateString("en-IN")} | Total Results: ${projects.length}`, 14, 25)
+
+  const allColumns = [
+    { key: "S No.", header: "S No.", width: 8, align: "center", getVal: (p: any, idx: number) => idx + 1 },
+    { key: "Customer Name", header: "Customer Name", width: 26, fontStyle: "bold", getVal: (p: any) => p.site_name },
+    { key: "Mobile No.", header: "Mobile No.", width: 17, align: "center", getVal: (p: any) => p.mobile_number || "-" },
+    { key: "ID", header: "ID", width: 10, align: "center", getVal: (p: any) => p.id_no },
+    { key: "Type", header: "Type", width: 14, getVal: (p: any) => p.order_type },
+    { key: "Firm Name", header: "Firm Name", width: 15, getVal: (p: any) => p.firm_name || "-" },
+    { key: "Party Print", header: "Party Print", width: 15, getVal: (p: any) => p.party_print_name || "-" },
+    { key: "Sales Man", header: "Sales Man", width: 15, getVal: (p: any) => p.salesman_name || "-" },
+    { key: "City", header: "City", width: 16, getVal: (p: any) => extractCityName(p.address) },
+    { key: "Order Val", header: "Order Val", width: 15, align: "right", getVal: (p: any) => formatPdfCurrency(p.order_value) },
+    { key: "Extra Wrk", header: "Extra Wrk", width: 14, align: "right", getVal: (p: any) => formatPdfCurrency(p.extra_work_value || 0) },
+    { key: "Received", header: "Received", width: 15, align: "right", getVal: (p: any) => formatPdfCurrency(p.payment_received) },
+    { key: "Balance", header: "Balance", width: 15, align: "right", fontStyle: "bold", getVal: (p: any) => formatPdfCurrency(p.balance) },
+    { key: "Work Rem", header: "Work Rem", width: 25, getVal: (p: any) => workRemarkMap[p.id] || p.work_remark || "-" },
+    { key: "Call Rem", header: "Call Rem", width: "auto", getVal: (p: any) => callRemarkMap[p.id] || "-" },
+  ];
+
+  const activeColumns = allColumns.filter(c => columnsConfig[c.key] !== false);
+
+  const tableHeaders = activeColumns.map(c => c.header);
+  const tableRows = projects.map((p, idx) => activeColumns.map(c => c.getVal(p, idx)));
+
+  const columnStyles: any = {};
+  activeColumns.forEach((c, idx) => {
+    columnStyles[idx] = {};
+    if (c.align) columnStyles[idx].halign = c.align;
+    if (c.fontStyle) columnStyles[idx].fontStyle = c.fontStyle;
+    
+    // Ensure first column header isn't bold if it wasn't specified (autoTable defaults to applying header styles, but we want our body font styles)
+    if (c.fontStyle) {
+        columnStyles[idx].textColor = [0, 0, 0];
+    }
+  });
+
+  autoTable(doc, {
+    head: [tableHeaders],
+    body: tableRows,
+    startY: 28,
+    theme: "grid",
+    headStyles: {
+      fillColor: [240, 240, 240],
+      textColor: [0, 0, 0],
+      fontSize: 8.5,
+      fontStyle: "bold",
+      lineWidth: 0.2,
+      lineColor: [120, 120, 120],
+    },
+    styles: {
+      fontSize: 8,
+      cellPadding: 3,
+      textColor: [0, 0, 0],
+      lineWidth: 0.2,
+      lineColor: [120, 120, 120],
+    },
+    columnStyles,
+  });
+
+  doc.save(`Directory_Export_${new Date().toISOString().split("T")[0]}.pdf`);
 }
