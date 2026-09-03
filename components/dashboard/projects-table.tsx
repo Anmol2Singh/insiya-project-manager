@@ -39,9 +39,11 @@ import {
   Phone,
   SlidersHorizontal,
   Trash2,
+  RefreshCw,
 } from "lucide-react"
 import type { ProjectSummary, CallingRecord, WorkRemark } from "@/lib/types"
 import { ImportExcelDialog } from "./import-excel-dialog"
+import { UpdateExcelDialog } from "./update-excel-dialog"
 import { getActiveCompany } from "@/lib/company-store"
 import { extractCityName, generateDirectoryPDF } from "@/lib/pdf-generator"
 import { getPdfColumnsConfig } from "@/lib/pdf-columns-store"
@@ -78,6 +80,7 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
   })
 
   const [importDialogOpen, setImportDialogOpen] = useState(false)
+  const [updateDialogOpen, setUpdateDialogOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -373,6 +376,15 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
                   <Button
                     variant="outline"
                     size="sm"
+                    onClick={() => setUpdateDialogOpen(true)}
+                    className="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 font-bold text-xs h-9 rounded-xl border-indigo-200 shadow-sm dark:bg-indigo-500/10 dark:text-indigo-400 dark:hover:bg-indigo-500/20 dark:border-indigo-500/20"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                    Update via Excel
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={() => setImportDialogOpen(true)}
                     className="bg-primary/10 text-primary hover:bg-primary/20 font-bold text-xs h-9 rounded-xl border-primary/20 shadow-sm"
                   >
@@ -581,6 +593,11 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
       <ImportExcelDialog
         open={importDialogOpen}
         onOpenChange={setImportDialogOpen}
+        onSuccess={() => onRefresh && onRefresh()}
+      />
+      <UpdateExcelDialog
+        open={updateDialogOpen}
+        onOpenChange={setUpdateDialogOpen}
         onSuccess={() => onRefresh && onRefresh()}
       />
     </>

@@ -10,6 +10,8 @@ export const DEFAULT_ORDER_TYPES = [
 
 export const DEFAULT_SALESMAN_OPTIONS = ["Sales Person 1", "Sales Person 2"]
 
+export const DEFAULT_FIRM_OPTIONS = ["Firm A", "Firm B"]
+
 export async function getDropdownCategories(): Promise<string[]> {
   const supabase = createClient()
   const { data, error } = await supabase
@@ -73,6 +75,40 @@ export async function saveDropdownSalesmen(salesmen: string[]): Promise<boolean>
 
   if (error) {
     console.error("Error saving salesmen:", error)
+    return false
+  }
+  return true
+}
+
+export async function getDropdownFirms(): Promise<string[]> {
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from("app_settings")
+    .select("value")
+    .eq("id", "dropdown_firms")
+    .single()
+
+  if (error || !data) {
+    if (error?.code !== 'PGRST116') {
+      console.error("Error fetching firms:", error)
+    }
+    return DEFAULT_FIRM_OPTIONS
+  }
+
+  return data.value as string[]
+}
+
+export async function saveDropdownFirms(firms: string[]): Promise<boolean> {
+  const supabase = createClient()
+  const { error } = await supabase
+    .from("app_settings")
+    .upsert({
+      id: "dropdown_firms",
+      value: firms,
+    })
+
+  if (error) {
+    console.error("Error saving firms:", error)
     return false
   }
   return true

@@ -37,6 +37,20 @@ export default function FilterProjectsPage() {
   const [onlyPending, setOnlyPending] = useState<boolean>(false)
   const [searchQuery, setSearchQuery] = useState<string>("")
 
+  type SortField = "id_no" | "order_type" | "site_name" | "party_print_name" | "mobile_number" | "address" | "order_value" | "extra_work_value" | "payment_received" | "balance"
+  type SortDirection = "asc" | "desc"
+  const [sortField, setSortField] = useState<SortField>("id_no")
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc")
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc")
+    } else {
+      setSortField(field)
+      setSortDirection("asc")
+    }
+  }
+
   // Fetch projects and categories
   useEffect(() => {
     setCanEdit(hasEditPermission())
@@ -75,7 +89,7 @@ export default function FilterProjectsPage() {
 
   // Filter logic
   const filteredProjects = useMemo(() => {
-    return projects.filter((p) => {
+    const filtered = projects.filter((p) => {
       // 1. Order Type
       if (selectedType !== "ALL" && p.order_type.toLowerCase() !== selectedType.toLowerCase()) {
         return false
@@ -111,7 +125,22 @@ export default function FilterProjectsPage() {
 
       return true
     })
-  }, [projects, selectedType, minBalance, maxBalance, onlyPending, searchQuery])
+
+    return filtered.sort((a: any, b: any) => {
+      let aVal = a[sortField]
+      let bVal = b[sortField]
+
+      if (typeof aVal === "string") aVal = aVal.toLowerCase()
+      if (typeof bVal === "string") bVal = bVal.toLowerCase()
+
+      if (aVal === undefined || aVal === null) aVal = ""
+      if (bVal === undefined || bVal === null) bVal = ""
+
+      if (aVal < bVal) return sortDirection === "asc" ? -1 : 1
+      if (aVal > bVal) return sortDirection === "asc" ? 1 : -1
+      return 0
+    })
+  }, [projects, selectedType, minBalance, maxBalance, onlyPending, searchQuery, sortField, sortDirection])
 
   const handleReset = () => {
     setSelectedType("ALL")
@@ -203,7 +232,7 @@ export default function FilterProjectsPage() {
       console.warn("Could not fetch remarks for excel export:", e)
     }
 
-    const exportData = filteredProjects.map((p, idx) => {
+    const exportData = filteredProjects.map((p: any, idx: number) => {
       const clearanceDate = p.balance !== 0
         ? todayStr
         : formatDate(p.updated_at || p.created_at)
@@ -400,21 +429,41 @@ export default function FilterProjectsPage() {
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/50 border-b">
-                      <TableHead className="font-bold uppercase text-[10px] py-4">ID</TableHead>
-                      <TableHead className="font-bold uppercase text-[10px] py-4">Type</TableHead>
-                      <TableHead className="w-[150px] font-bold uppercase text-[10px] py-4">Customer Name</TableHead>
-                      <TableHead className="w-[120px] font-bold uppercase text-[10px] py-4">Party Print Name</TableHead>
-                      <TableHead className="font-bold uppercase text-[10px] py-4">Mobile No.</TableHead>
-                      <TableHead className="font-bold uppercase text-[10px] py-4">Address</TableHead>
-                      <TableHead className="text-right font-bold uppercase text-[10px] py-4">Order Value</TableHead>
-                      <TableHead className="text-right font-bold uppercase text-[10px] py-4">Extra Work</TableHead>
-                      <TableHead className="text-right font-bold uppercase text-[10px] py-4">Payment Recd</TableHead>
-                      <TableHead className="text-right font-bold uppercase text-[10px] py-4">Balance</TableHead>
+                      <TableHead className="font-bold uppercase text-[10px] py-4 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => handleSort("id_no")}>
+                        ID {sortField === "id_no" ? (sortDirection === "asc" ? "↑" : "↓") : ""}
+                      </TableHead>
+                      <TableHead className="font-bold uppercase text-[10px] py-4 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => handleSort("order_type")}>
+                        Type {sortField === "order_type" ? (sortDirection === "asc" ? "↑" : "↓") : ""}
+                      </TableHead>
+                      <TableHead className="w-[150px] font-bold uppercase text-[10px] py-4 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => handleSort("site_name")}>
+                        Customer Name {sortField === "site_name" ? (sortDirection === "asc" ? "↑" : "↓") : ""}
+                      </TableHead>
+                      <TableHead className="w-[120px] font-bold uppercase text-[10px] py-4 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => handleSort("party_print_name")}>
+                        Party Print Name {sortField === "party_print_name" ? (sortDirection === "asc" ? "↑" : "↓") : ""}
+                      </TableHead>
+                      <TableHead className="font-bold uppercase text-[10px] py-4 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => handleSort("mobile_number")}>
+                        Mobile No. {sortField === "mobile_number" ? (sortDirection === "asc" ? "↑" : "↓") : ""}
+                      </TableHead>
+                      <TableHead className="font-bold uppercase text-[10px] py-4 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => handleSort("address")}>
+                        Address {sortField === "address" ? (sortDirection === "asc" ? "↑" : "↓") : ""}
+                      </TableHead>
+                      <TableHead className="text-right font-bold uppercase text-[10px] py-4 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => handleSort("order_value")}>
+                        Order Value {sortField === "order_value" ? (sortDirection === "asc" ? "↑" : "↓") : ""}
+                      </TableHead>
+                      <TableHead className="text-right font-bold uppercase text-[10px] py-4 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => handleSort("extra_work_value")}>
+                        Extra Work {sortField === "extra_work_value" ? (sortDirection === "asc" ? "↑" : "↓") : ""}
+                      </TableHead>
+                      <TableHead className="text-right font-bold uppercase text-[10px] py-4 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => handleSort("payment_received")}>
+                        Payment Recd {sortField === "payment_received" ? (sortDirection === "asc" ? "↑" : "↓") : ""}
+                      </TableHead>
+                      <TableHead className="text-right font-bold uppercase text-[10px] py-4 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => handleSort("balance")}>
+                        Balance {sortField === "balance" ? (sortDirection === "asc" ? "↑" : "↓") : ""}
+                      </TableHead>
                       <TableHead className="text-center font-bold uppercase text-[10px] py-4">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredProjects.map((project, idx) => (
+                    {filteredProjects.map((project: any, idx: number) => (
                       <TableRow key={project.id ? `f-proj-${project.id}` : `f-idx-${idx}`} className="hover:bg-muted/40 border-b">
                         <TableCell className="font-bold text-muted-foreground">{project.id_no}</TableCell>
                         <TableCell>

@@ -12,6 +12,9 @@ import {
   saveDropdownSalesmen,
   DEFAULT_ORDER_TYPES,
   DEFAULT_SALESMAN_OPTIONS,
+  DEFAULT_FIRM_OPTIONS,
+  getDropdownFirms,
+  saveDropdownFirms,
 } from "@/lib/dropdown-store"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -65,6 +68,13 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
   const [editingSalesmanIdx, setEditingSalesmanIdx] = useState<number | null>(null)
   const [editingSalesmanText, setEditingSalesmanText] = useState("")
 
+  // Firm management state
+  const [firmOptions, setFirmOptions] = useState<string[]>(DEFAULT_FIRM_OPTIONS)
+  const [manageFirmOpen, setManageFirmOpen] = useState(false)
+  const [newFirmName, setNewFirmName] = useState("")
+  const [editingFirmIdx, setEditingFirmIdx] = useState<number | null>(null)
+  const [editingFirmText, setEditingFirmText] = useState("")
+
   useEffect(() => {
     async function loadDropdowns() {
       try {
@@ -73,6 +83,9 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
         
         const salesmen = await getDropdownSalesmen()
         setSalesmanOptions(salesmen)
+        
+        const firms = await getDropdownFirms()
+        setFirmOptions(firms)
       } catch (e) {
         console.error("Error loading dropdown options from DB:", e)
       }
@@ -181,10 +194,81 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
     await saveSalesmanOptions(updated)
   }
 
+  // Firm Management Handlers
+  const saveFirmOptions = async (updated: string[]) => {
+    setFirmOptions(updated)
+    await saveDropdownFirms(updated)
+  }
+
+  const handleAddFirm = async () => {
+    const trimmed = newFirmName.trim()
+    if (!trimmed) return
+    if (firmOptions.includes(trimmed)) {
+      toast.error("Firm already exists in list")
+      return
+    }
+    const updated = [...firmOptions, trimmed]
+    await saveFirmOptions(updated)
+    setNewFirmName("")
+    toast.success(`Firm "${trimmed}" added!`)
+  }
+
+  const handleRemoveFirm = async (nameToRemove: string) => {
+    if (firmOptions.length <= 1) {
+      toast.error("Cannot remove all firms from list")
+      return
+    }
+    const updated = firmOptions.filter((s) => s !== nameToRemove)
+    await saveFirmOptions(updated)
+    if (formData.firm_name === nameToRemove) {
+      setFormData((prev) => ({ ...prev, firm_name: updated[0] || "" }))
+    }
+    toast.success(`Firm "${nameToRemove}" removed`)
+  }
+
+  const handleStartEditFirm = (idx: number, currentText: string) => {
+    setEditingFirmIdx(idx)
+    setEditingFirmText(currentText)
+  }
+
+  const handleSaveEditFirm = async (idx: number) => {
+    const trimmed = editingFirmText.trim()
+    if (!trimmed) return
+    const updated = [...firmOptions]
+    const oldName = updated[idx]
+    updated[idx] = trimmed
+    await saveFirmOptions(updated)
+    if (formData.firm_name === oldName) {
+      setFormData((prev) => ({ ...prev, firm_name: trimmed }))
+    }
+    setEditingFirmIdx(null)
+    setEditingFirmText("")
+    toast.success("Firm name updated")
+  }
+
+  const handleMoveUpFirm = async (idx: number) => {
+    if (idx === 0) return
+    const updated = [...firmOptions]
+    const temp = updated[idx - 1]
+    updated[idx - 1] = updated[idx]
+    updated[idx] = temp
+    await saveFirmOptions(updated)
+  }
+
+  const handleMoveDownFirm = async (idx: number) => {
+    if (idx === firmOptions.length - 1) return
+    const updated = [...firmOptions]
+    const temp = updated[idx + 1]
+    updated[idx + 1] = updated[idx]
+    updated[idx] = temp
+    await saveFirmOptions(updated)
+  }
+
   const [formData, setFormData] = useState({
     id_no: project?.id_no?.toString() || "",
     order_type: project?.order_type || "",
     salesman_name: project?.salesman_name || "",
+    firm_name: project?.firm_name || "",
     site_name: project?.site_name || "",
     party_print_name: project?.party_print_name || "",
     mobile_number: project?.mobile_number || "",
@@ -217,6 +301,7 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
         id_no: parseInt(formData.id_no) || 0,
         order_type: formData.order_type,
         salesman_name: formData.salesman_name || null,
+        firm_name: formData.firm_name || null,
         site_name: formData.site_name,
         party_print_name: finalPartyPrintName || null,
         mobile_number: formData.mobile_number || null,
@@ -434,6 +519,45 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
                   <SelectContent className="rounded-xl border-border/50 shadow-xl">
                     {displaySalesmanOptions.filter(Boolean).map((name, idx) => (
                       <SelectItem key={`salesman-${idx}-${name}`} value={name} className="rounded-lg">
+                        {name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Firm Name Field */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <Label htmlFor="firm_name" className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">
+                    Firm Name
+                  </Label>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setManageFirmOpen(true)
+                        setEditingFirmIdx(null)
+                        setNewFirmName("")
+                      }}
+                      className="text-xs text-primary hover:underline font-semibold flex items-center gap-1"
+                    >
+                      <Settings2 className="h-3 w-3" /> Edit Dropdown List
+                    </button>
+                  )}
+                </div>
+
+                <Select
+                  value={formData.firm_name}
+                  onValueChange={(value) => setFormData({ ...formData, firm_name: value })}
+                  disabled={!canEdit}
+                >
+                  <SelectTrigger className="rounded-xl h-12 bg-muted/30 border-border/50 focus:bg-background transition-all">
+                    <SelectValue placeholder="Select Firm" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl border-border/50 shadow-xl">
+                    {firmOptions.filter(Boolean).map((name, idx) => (
+                      <SelectItem key={`firm-${idx}-${name}`} value={name} className="rounded-lg">
                         {name}
                       </SelectItem>
                     ))}
@@ -724,6 +848,128 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
                 type="button"
                 variant="outline"
                 onClick={() => setManageSalesmanOpen(false)}
+                className="rounded-xl font-bold"
+              >
+                Done
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manage Firm Dialog */}
+      <Dialog open={manageFirmOpen} onOpenChange={setManageFirmOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold">Manage Firm Names</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="flex gap-2">
+              <Input
+                placeholder="New Firm Name..."
+                value={newFirmName}
+                onChange={(e) => setNewFirmName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault()
+                    handleAddFirm()
+                  }
+                }}
+                className="rounded-xl"
+              />
+              <Button type="button" onClick={handleAddFirm} className="rounded-xl font-bold">
+                <Plus className="h-4 w-4 mr-1" /> Add
+              </Button>
+            </div>
+            <div className="space-y-2 max-h-60 overflow-y-auto border rounded-2xl p-3 bg-muted/30">
+              {firmOptions.filter(Boolean).map((name, idx) => (
+                <div key={`manage-firm-${idx}-${name}`} className="flex justify-between items-center bg-card p-2.5 rounded-xl border border-border">
+                  {editingFirmIdx === idx ? (
+                    <div className="flex items-center gap-2 flex-1 mr-2">
+                      <Input
+                        value={editingFirmText}
+                        onChange={(e) => setEditingFirmText(e.target.value)}
+                        className="h-8 text-sm"
+                        autoFocus
+                      />
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => handleSaveEditFirm(idx)}
+                        className="h-7 w-7 text-success"
+                        title="Save"
+                      >
+                        <Check className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => setEditingFirmIdx(null)}
+                        className="h-7 w-7 text-muted-foreground"
+                        title="Cancel"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      <span className="text-sm font-semibold truncate max-w-[180px]">{name}</span>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          disabled={idx === 0}
+                          onClick={() => handleMoveUpFirm(idx)}
+                          className="h-7 w-7 rounded-lg"
+                          title="Move Up"
+                        >
+                          <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          disabled={idx === firmOptions.length - 1}
+                          onClick={() => handleMoveDownFirm(idx)}
+                          className="h-7 w-7 rounded-lg"
+                          title="Move Down"
+                        >
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleStartEditFirm(idx, name)}
+                          className="h-7 w-7 rounded-lg text-primary hover:bg-primary/10"
+                          title="Edit Name"
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleRemoveFirm(name)}
+                          className="h-7 w-7 rounded-lg text-destructive hover:bg-destructive/10"
+                          title="Remove Firm"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setManageFirmOpen(false)}
                 className="rounded-xl font-bold"
               >
                 Done
