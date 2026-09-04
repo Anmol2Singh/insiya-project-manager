@@ -12,6 +12,7 @@ export const PDF_COLUMNS = [
   "Extra Wrk", 
   "Received", 
   "Balance", 
+  "Reminder Date",
   "Work Rem", 
   "Call Rem"
 ];

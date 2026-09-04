@@ -641,12 +641,33 @@ export function formatPdfCurrency(val: number | null | undefined): string {
   return `Rs. ${(val || 0).toLocaleString("en-IN")}`
 }
 
+export function formatPdfDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return "-"
+  try {
+    const clean = dateStr.split("T")[0]
+    const parts = clean.split("-")
+    if (parts.length === 3 && parts[0].length === 4) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`
+    }
+    const d = new Date(dateStr)
+    if (isNaN(d.getTime())) return dateStr
+    return d.toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    })
+  } catch (e) {
+    return dateStr
+  }
+}
+
 export async function generateDirectoryPDF(
   projects: (Project | ProjectSummary)[],
   title: string,
   callRemarkMap: Record<string, string>,
   workRemarkMap: Record<string, string>,
-  columnsConfig: Record<string, boolean>
+  columnsConfig: Record<string, boolean>,
+  callDateMap?: Record<string, string>
 ) {
   const doc = new jsPDF("landscape")
   const pageWidth = doc.internal.pageSize.width
@@ -675,20 +696,21 @@ export async function generateDirectoryPDF(
 
   const allColumns = [
     { key: "S No.", header: "S No.", width: 8, align: "center", getVal: (p: any, idx: number) => idx + 1 },
-    { key: "Customer Name", header: "Customer Name", width: 26, fontStyle: "bold", getVal: (p: any) => p.site_name },
+    { key: "Customer Name", header: "Customer Name", width: 25, fontStyle: "bold", getVal: (p: any) => p.site_name },
     { key: "Mobile No.", header: "Mobile No.", width: 17, align: "center", getVal: (p: any) => p.mobile_number || "-" },
     { key: "ID", header: "ID", width: 10, align: "center", getVal: (p: any) => p.id_no },
-    { key: "Type", header: "Type", width: 14, getVal: (p: any) => p.order_type },
-    { key: "Firm Name", header: "Firm Name", width: 15, getVal: (p: any) => p.firm_name || "-" },
-    { key: "Party Print", header: "Party Print", width: 15, getVal: (p: any) => p.party_print_name || "-" },
-    { key: "Sales Man", header: "Sales Man", width: 15, getVal: (p: any) => p.salesman_name || "-" },
-    { key: "City", header: "City", width: 16, getVal: (p: any) => extractCityName(p.address) },
+    { key: "Type", header: "Type", width: 13, getVal: (p: any) => p.order_type },
+    { key: "Firm Name", header: "Firm Name", width: 14, getVal: (p: any) => p.firm_name || "-" },
+    { key: "Party Print", header: "Party Print", width: 14, getVal: (p: any) => p.party_print_name || "-" },
+    { key: "Sales Man", header: "Sales Man", width: 14, getVal: (p: any) => p.salesman_name || "-" },
+    { key: "City", header: "City", width: 15, getVal: (p: any) => extractCityName(p.address) },
     { key: "Order Val", header: "Order Val", width: 15, align: "right", getVal: (p: any) => formatPdfCurrency(p.order_value) },
-    { key: "Extra Wrk", header: "Extra Wrk", width: 14, align: "right", getVal: (p: any) => formatPdfCurrency(p.extra_work_value || 0) },
+    { key: "Extra Wrk", header: "Extra Wrk", width: 13, align: "right", getVal: (p: any) => formatPdfCurrency(p.extra_work_value || 0) },
     { key: "Received", header: "Received", width: 15, align: "right", getVal: (p: any) => formatPdfCurrency(p.payment_received) },
     { key: "Balance", header: "Balance", width: 15, align: "right", fontStyle: "bold", getVal: (p: any) => formatPdfCurrency(p.balance) },
-    { key: "Work Rem", header: "Work Rem", width: 25, getVal: (p: any) => workRemarkMap[p.id] || p.work_remark || "-" },
-    { key: "Call Rem", header: "Call Rem", width: "auto", getVal: (p: any) => callRemarkMap[p.id] || "-" },
+    { key: "Reminder Date", header: "Reminder Date", width: 17, align: "center", getVal: (p: any) => formatPdfDate(p.reminder_date || (callDateMap && callDateMap[p.id])) },
+    { key: "Work Rem", header: "Work Rem", width: 20, getVal: (p: any) => workRemarkMap[p.id] || p.work_remark || "-" },
+    { key: "Call Rem", header: "Call Rem", width: "auto", getVal: (p: any) => callRemarkMap[p.id] || (p as any).last_call_remark || "-" },
   ];
 
   const activeColumns = allColumns.filter(c => columnsConfig[c.key] !== false);

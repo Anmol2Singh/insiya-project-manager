@@ -17,7 +17,7 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { ArrowLeft, SlidersHorizontal, Download, FileSpreadsheet, ExternalLink, RotateCcw, Search } from "lucide-react"
+import { ArrowLeft, SlidersHorizontal, Download, FileSpreadsheet, ExternalLink, RotateCcw, Search, Calendar } from "lucide-react"
 import { jsPDF } from "jspdf"
 import autoTable from "jspdf-autotable"
 import * as XLSX from "xlsx"
@@ -37,7 +37,7 @@ export default function FilterProjectsPage() {
   const [onlyPending, setOnlyPending] = useState<boolean>(false)
   const [searchQuery, setSearchQuery] = useState<string>("")
 
-  type SortField = "id_no" | "order_type" | "site_name" | "party_print_name" | "mobile_number" | "address" | "order_value" | "extra_work_value" | "payment_received" | "balance"
+  type SortField = "id_no" | "order_type" | "site_name" | "party_print_name" | "mobile_number" | "address" | "order_value" | "extra_work_value" | "payment_received" | "balance" | "reminder_date"
   type SortDirection = "asc" | "desc"
   const [sortField, setSortField] = useState<SortField>("id_no")
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc")
@@ -65,8 +65,41 @@ export default function FilterProjectsPage() {
           .order("id_no", { ascending: false })
 
         if (error) throw error
+
+        const projectIds = (data || []).map((p: any) => p.id)
+        const callDateMap: Record<string, string> = {}
+        const callRemarkMap: Record<string, string> = {}
+
+        if (projectIds.length > 0) {
+          try {
+            const { data: callData } = await supabase
+              .from("calling_records")
+              .select("project_id, date, description, created_at, sr_no")
+              .in("project_id", projectIds)
+              .order("date", { ascending: false })
+
+            if (callData) {
+              callData.forEach((rec: any) => {
+                if (!rec.project_id || !rec.date) return
+                if (!callDateMap[rec.project_id]) {
+                  callDateMap[rec.project_id] = rec.date
+                } else if (new Date(rec.date).getTime() > new Date(callDateMap[rec.project_id]).getTime()) {
+                  callDateMap[rec.project_id] = rec.date
+                }
+                if (!callRemarkMap[rec.project_id] && rec.description) {
+                  callRemarkMap[rec.project_id] = rec.description
+                }
+              })
+            }
+          } catch (callErr) {
+            console.warn("Could not fetch calling records for filter:", callErr)
+          }
+        }
+
         const computedProjects = (data || []).map((p: any) => ({
           ...p,
+          reminder_date: callDateMap[p.id] || null,
+          last_call_remark: callRemarkMap[p.id] || null,
           balance: (p.order_value || 0) + (p.extra_work_value || 0) - (p.payment_received || 0),
         }))
         setProjects(computedProjects)
@@ -162,10 +195,21 @@ export default function FilterProjectsPage() {
     return `Rs. ${(val || 0).toLocaleString("en-IN")}`
   }
 
-  const formatDate = (dateStr: string) => {
+  const formatDate = (dateStr: string | null | undefined) => {
     if (!dateStr) return "-"
     try {
-      return new Date(dateStr).toLocaleDateString("en-IN")
+      const clean = dateStr.split("T")[0]
+      const parts = clean.split("-")
+      if (parts.length === 3 && parts[0].length === 4) {
+        return `${parts[2]}/${parts[1]}/${parts[0]}`
+      }
+      const d = new Date(dateStr)
+      if (isNaN(d.getTime())) return dateStr
+      return d.toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      })
     } catch {
       return dateStr
     }
@@ -174,16 +218,25 @@ export default function FilterProjectsPage() {
   // Filtered PDF Export
   const handleGeneratePDF = async () => {
     let callRemarkMap: Record<string, string> = {}
+    let callDateMap: Record<string, string> = {}
     let workRemarkMap: Record<string, string> = {}
     
     try {
       const supabase = createClient()
       const [callRes, workRes] = await Promise.all([
-        supabase.from("calling_records").select("*").order("created_at", { ascending: false }),
+        supabase.from("calling_records").select("*").order("date", { ascending: false }),
         supabase.from("work_remarks").select("*").order("date", { ascending: false })
       ])
 
       callRes.data?.forEach((rec: CallingRecord) => {
+        if (!rec.project_id) return
+        if (!callDateMap[rec.project_id] && rec.date) {
+          callDateMap[rec.project_id] = rec.date
+        } else if (rec.date && callDateMap[rec.project_id]) {
+          if (new Date(rec.date).getTime() > new Date(callDateMap[rec.project_id]).getTime()) {
+            callDateMap[rec.project_id] = rec.date
+          }
+        }
         if (!callRemarkMap[rec.project_id] && rec.description) {
           callRemarkMap[rec.project_id] = rec.description
         }
@@ -199,7 +252,7 @@ export default function FilterProjectsPage() {
     }
 
     const columnsConfig = getPdfColumnsConfig()
-    await generateDirectoryPDF(filteredProjects, "FILTERED CUSTOMER DIRECTORY REPORT", callRemarkMap, workRemarkMap, columnsConfig)
+    await generateDirectoryPDF(filteredProjects, "FILTERED CUSTOMER DIRECTORY REPORT", callRemarkMap, workRemarkMap, columnsConfig, callDateMap)
   }
 
   // Filtered Excel Export
@@ -208,16 +261,25 @@ export default function FilterProjectsPage() {
     const compName = getActiveCompany()?.name || "Insiya Solar Industry"
 
     let callRemarkMap: Record<string, string> = {}
+    let callDateMap: Record<string, string> = {}
     let workRemarkMap: Record<string, string> = {}
     
     try {
       const supabase = createClient()
       const [callRes, workRes] = await Promise.all([
-        supabase.from("calling_records").select("*").order("created_at", { ascending: false }),
+        supabase.from("calling_records").select("*").order("date", { ascending: false }),
         supabase.from("work_remarks").select("*").order("date", { ascending: false })
       ])
 
       callRes.data?.forEach((rec: CallingRecord) => {
+        if (!rec.project_id) return
+        if (!callDateMap[rec.project_id] && rec.date) {
+          callDateMap[rec.project_id] = rec.date
+        } else if (rec.date && callDateMap[rec.project_id]) {
+          if (new Date(rec.date).getTime() > new Date(callDateMap[rec.project_id]).getTime()) {
+            callDateMap[rec.project_id] = rec.date
+          }
+        }
         if (!callRemarkMap[rec.project_id] && rec.description) {
           callRemarkMap[rec.project_id] = rec.description
         }
@@ -237,6 +299,8 @@ export default function FilterProjectsPage() {
         ? todayStr
         : formatDate(p.updated_at || p.created_at)
 
+      const reminderDateVal = p.reminder_date || callDateMap[p.id]
+
       return {
         "S No.": idx + 1,
         "Customer Creation Date": formatDate(p.created_at),
@@ -255,8 +319,9 @@ export default function FilterProjectsPage() {
         "Extra Work Value (Rs)": p.extra_work_value || 0,
         "Payment Received (Rs)": p.payment_received,
         "Outstanding Balance (Rs)": p.balance,
+        "Reminder Date": reminderDateVal ? formatDate(reminderDateVal) : "-",
         "Last Work Remark": workRemarkMap[p.id] || p.work_remark || "",
-        "Last Call Remark": callRemarkMap[p.id] || "",
+        "Last Call Remark": callRemarkMap[p.id] || (p as any).last_call_remark || "",
       }
     })
 
@@ -459,6 +524,9 @@ export default function FilterProjectsPage() {
                       <TableHead className="text-right font-bold uppercase text-[10px] py-4 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => handleSort("balance")}>
                         Balance {sortField === "balance" ? (sortDirection === "asc" ? "↑" : "↓") : ""}
                       </TableHead>
+                      <TableHead className="text-center font-bold uppercase text-[10px] py-4 cursor-pointer hover:bg-muted/50 transition-colors whitespace-nowrap px-3" onClick={() => handleSort("reminder_date")}>
+                        Reminder Date {sortField === "reminder_date" ? (sortDirection === "asc" ? "↑" : "↓") : ""}
+                      </TableHead>
                       <TableHead className="text-center font-bold uppercase text-[10px] py-4">Action</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -490,6 +558,19 @@ export default function FilterProjectsPage() {
                         </TableCell>
                         <TableCell className={`text-right font-mono text-xs font-bold ${project.balance > 0 ? "text-success" : project.balance < 0 ? "text-destructive" : ""}`}>
                           {formatCurrency(project.balance)}
+                        </TableCell>
+                        <TableCell className="text-center whitespace-nowrap text-xs px-3">
+                          {project.reminder_date ? (
+                            <span
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted/60 text-foreground text-[11px] font-medium border border-border/50"
+                              title={project.last_call_remark ? `Last Call: ${project.last_call_remark}` : `Reminder Date: ${formatDate(project.reminder_date)}`}
+                            >
+                              <Calendar className="h-3 w-3 text-primary shrink-0" />
+                              {formatDate(project.reminder_date)}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground/40 font-mono">-</span>
+                          )}
                         </TableCell>
                         <TableCell className="text-center">
                           <Link href={`/projects/${project.id}`}>

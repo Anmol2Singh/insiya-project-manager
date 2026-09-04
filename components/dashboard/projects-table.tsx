@@ -40,6 +40,7 @@ import {
   SlidersHorizontal,
   Trash2,
   RefreshCw,
+  Calendar,
 } from "lucide-react"
 import type { ProjectSummary, CallingRecord, WorkRemark } from "@/lib/types"
 import { ImportExcelDialog } from "./import-excel-dialog"
@@ -59,7 +60,7 @@ interface ProjectsTableProps {
   onRefresh?: () => void
 }
 
-type SortField = "id_no" | "site_name" | "order_value" | "extra_work_value" | "balance"
+type SortField = "id_no" | "site_name" | "order_value" | "extra_work_value" | "balance" | "reminder_date"
 type SortDirection = "asc" | "desc"
 
 export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
@@ -165,9 +166,9 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
     const bVal = b[sortField]
     const multiplier = sortDirection === "asc" ? 1 : -1
 
-    if (aVal == null && bVal == null) return 0
-    if (aVal == null) return 1 * multiplier
-    if (bVal == null) return -1 * multiplier
+    if ((aVal == null || aVal === "") && (bVal == null || bVal === "")) return 0
+    if (aVal == null || aVal === "") return 1
+    if (bVal == null || bVal === "") return -1
 
     if (typeof aVal === "string" || typeof bVal === "string") {
       return String(aVal).localeCompare(String(bVal)) * multiplier
@@ -187,6 +188,11 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
   const formatDate = (dateStr: string | null | undefined) => {
     if (!dateStr) return "-"
     try {
+      const clean = dateStr.split("T")[0]
+      const parts = clean.split("-")
+      if (parts.length === 3 && parts[0].length === 4) {
+        return `${parts[2]}/${parts[1]}/${parts[0]}`
+      }
       const d = new Date(dateStr)
       if (isNaN(d.getTime())) return dateStr
       return d.toLocaleDateString("en-IN", {
@@ -201,16 +207,25 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
 
   const handleGeneratePDF = async () => {
     let callRemarkMap: Record<string, string> = {}
+    let callDateMap: Record<string, string> = {}
     let workRemarkMap: Record<string, string> = {}
     try {
       const supabase = createClient()
       
       const [callRes, workRes] = await Promise.all([
-        supabase.from("calling_records").select("*").order("created_at", { ascending: false }),
+        supabase.from("calling_records").select("*").order("date", { ascending: false }),
         supabase.from("work_remarks").select("*").order("date", { ascending: false })
       ])
 
       callRes.data?.forEach((rec: CallingRecord) => {
+        if (!rec.project_id) return
+        if (!callDateMap[rec.project_id] && rec.date) {
+          callDateMap[rec.project_id] = rec.date
+        } else if (rec.date && callDateMap[rec.project_id]) {
+          if (new Date(rec.date).getTime() > new Date(callDateMap[rec.project_id]).getTime()) {
+            callDateMap[rec.project_id] = rec.date
+          }
+        }
         if (!callRemarkMap[rec.project_id] && rec.description) {
           callRemarkMap[rec.project_id] = rec.description
         }
@@ -226,7 +241,7 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
     }
 
     const columnsConfig = getPdfColumnsConfig()
-    await generateDirectoryPDF(sortedProjects, "CUSTOMER DIRECTORY & SUMMARY REPORT", callRemarkMap, workRemarkMap, columnsConfig)
+    await generateDirectoryPDF(sortedProjects, "CUSTOMER DIRECTORY & SUMMARY REPORT", callRemarkMap, workRemarkMap, columnsConfig, callDateMap)
   }
 
   const handleExportExcel = async () => {
@@ -234,15 +249,24 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
     const compName = getActiveCompany()?.name || "Insiya Solar Industry"
 
     let callRemarkMap: Record<string, string> = {}
+    let callDateMap: Record<string, string> = {}
     let workRemarkMap: Record<string, string> = {}
     try {
       const supabase = createClient()
       const [callRes, workRes] = await Promise.all([
-        supabase.from("calling_records").select("*").order("created_at", { ascending: false }),
+        supabase.from("calling_records").select("*").order("date", { ascending: false }),
         supabase.from("work_remarks").select("*").order("date", { ascending: false })
       ])
 
       callRes.data?.forEach((rec: CallingRecord) => {
+        if (!rec.project_id) return
+        if (!callDateMap[rec.project_id] && rec.date) {
+          callDateMap[rec.project_id] = rec.date
+        } else if (rec.date && callDateMap[rec.project_id]) {
+          if (new Date(rec.date).getTime() > new Date(callDateMap[rec.project_id]).getTime()) {
+            callDateMap[rec.project_id] = rec.date
+          }
+        }
         if (!callRemarkMap[rec.project_id] && rec.description) {
           callRemarkMap[rec.project_id] = rec.description
         }
@@ -262,6 +286,8 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
         ? todayStr
         : formatDate(p.updated_at || p.created_at)
 
+      const reminderDateVal = p.reminder_date || callDateMap[p.id]
+
       return {
         "S No.": idx + 1,
         "Customer Creation Date": formatDate(p.created_at),
@@ -280,8 +306,9 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
         "Extra Work Value (Rs)": p.extra_work_value || 0,
         "Payment Received (Rs)": p.payment_received,
         "Outstanding Balance (Rs)": p.balance,
+        "Reminder Date": reminderDateVal ? formatDate(reminderDateVal) : "-",
         "Last Work Remark": workRemarkMap[p.id] || p.work_remark || "",
-        "Last Call Remark": callRemarkMap[p.id] || "",
+        "Last Call Remark": callRemarkMap[p.id] || (p as any).last_call_remark || "",
       }
     })
 
@@ -419,29 +446,35 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
                   >
                     Customer / Site Name <SortIcon field="site_name" />
                   </TableHead>
-                  <TableHead className="w-[150px] font-bold text-foreground uppercase text-[10px] tracking-widest py-4">Party Print Name</TableHead>
-                  <TableHead className="font-bold text-foreground uppercase text-[10px] tracking-widest py-4">Mobile No.</TableHead>
+                  <TableHead className="w-[140px] font-bold text-foreground uppercase text-[10px] tracking-widest py-4">Party Print Name</TableHead>
+                  <TableHead className="font-bold text-foreground uppercase text-[10px] tracking-widest py-4 whitespace-nowrap">Mobile No.</TableHead>
                   <TableHead className="font-bold text-foreground uppercase text-[10px] tracking-widest py-4">Address</TableHead>
                   <TableHead
-                    className="text-right cursor-pointer font-bold text-foreground bg-info/5 uppercase text-[10px] tracking-widest py-4"
+                    className="text-right cursor-pointer font-bold text-foreground bg-info/5 uppercase text-[10px] tracking-widest py-4 whitespace-nowrap"
                     onClick={() => handleSort("order_value")}
                   >
                     Order Value <SortIcon field="order_value" />
                   </TableHead>
                   <TableHead
-                    className="text-right cursor-pointer font-bold text-foreground bg-warning/5 uppercase text-[10px] tracking-widest py-4"
+                    className="text-right cursor-pointer font-bold text-foreground bg-warning/5 uppercase text-[10px] tracking-widest py-4 whitespace-nowrap"
                     onClick={() => handleSort("extra_work_value")}
                   >
                     Extra Work <SortIcon field="extra_work_value" />
                   </TableHead>
-                  <TableHead className="text-right font-bold text-foreground bg-success/5 uppercase text-[10px] tracking-widest py-4">
+                  <TableHead className="text-right font-bold text-foreground bg-success/5 uppercase text-[10px] tracking-widest py-4 whitespace-nowrap">
                     Payment Recd
                   </TableHead>
                   <TableHead
-                    className="text-right cursor-pointer font-bold text-foreground uppercase text-[10px] tracking-widest py-4"
+                    className="text-right cursor-pointer font-bold text-foreground uppercase text-[10px] tracking-widest py-4 whitespace-nowrap"
                     onClick={() => handleSort("balance")}
                   >
                     Balance <SortIcon field="balance" />
+                  </TableHead>
+                  <TableHead
+                    className="text-center cursor-pointer font-bold text-foreground uppercase text-[10px] tracking-widest py-4 whitespace-nowrap px-3 hover:text-primary transition-colors"
+                    onClick={() => handleSort("reminder_date")}
+                  >
+                    Reminder Date <SortIcon field="reminder_date" />
                   </TableHead>
                   <TableHead className="text-center font-bold text-foreground uppercase text-[10px] tracking-widest py-4">Action</TableHead>
                 </TableRow>
@@ -468,34 +501,47 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
                       )}
                       <TableCell className={`font-bold text-muted-foreground ${!canEdit ? 'pl-6' : ''}`}>{project.id_no}</TableCell>
                       <TableCell>
-                        <Badge variant="secondary" className="bg-secondary/50 text-secondary-foreground font-bold text-[10px] uppercase px-2 h-5">
+                        <Badge variant="secondary" className="bg-secondary/50 text-secondary-foreground font-bold text-[10px] uppercase px-2 h-5 whitespace-nowrap">
                           {project.order_type}
                         </Badge>
                       </TableCell>
-                      <TableCell className="max-w-[200px] truncate font-bold text-foreground">
+                      <TableCell className="max-w-[180px] truncate font-bold text-foreground" title={project.site_name}>
                         {project.site_name}
                       </TableCell>
-                      <TableCell className="max-w-[150px] truncate font-semibold text-muted-foreground text-xs">
+                      <TableCell className="max-w-[140px] truncate font-semibold text-muted-foreground text-xs" title={project.party_print_name || undefined}>
                         {project.party_print_name || "-"}
                       </TableCell>
-                      <TableCell className="text-xs font-semibold text-muted-foreground">
+                      <TableCell className="text-xs font-semibold text-muted-foreground whitespace-nowrap">
                         {project.mobile_number || "-"}
                       </TableCell>
-                      <TableCell className="max-w-[200px] truncate text-muted-foreground text-xs">
+                      <TableCell className="max-w-[180px] truncate text-muted-foreground text-xs" title={project.address}>
                         {project.address}
                       </TableCell>
-                      <TableCell className="text-right bg-info/5 font-mono text-xs">
+                      <TableCell className="text-right bg-info/5 font-mono text-xs whitespace-nowrap">
                         {formatCurrency(project.order_value)}
                       </TableCell>
-                      <TableCell className="text-right bg-warning/5 font-mono text-xs font-semibold">
+                      <TableCell className="text-right bg-warning/5 font-mono text-xs font-semibold whitespace-nowrap">
                         {formatCurrency(project.extra_work_value || 0)}
                       </TableCell>
-                      <TableCell className="text-right bg-success/5 font-mono text-xs text-success font-semibold">
+                      <TableCell className="text-right bg-success/5 font-mono text-xs text-success font-semibold whitespace-nowrap">
                         {formatCurrency(project.payment_received)}
                       </TableCell>
-                      <TableCell className={`text-right font-mono text-xs font-bold ${project.balance > 0 ? "text-success" : project.balance < 0 ? "text-destructive" : ""
+                      <TableCell className={`text-right font-mono text-xs font-bold whitespace-nowrap ${project.balance > 0 ? "text-success" : project.balance < 0 ? "text-destructive" : ""
                         }`}>
                         {formatCurrency(project.balance)}
+                      </TableCell>
+                      <TableCell className="text-center whitespace-nowrap text-xs px-3">
+                        {project.reminder_date ? (
+                          <span
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted/60 text-foreground text-[11px] font-medium border border-border/50 shadow-2xs"
+                            title={project.last_call_remark ? `Last Call: ${project.last_call_remark}` : `Reminder Date: ${formatDate(project.reminder_date)}`}
+                          >
+                            <Calendar className="h-3 w-3 text-primary shrink-0" />
+                            {formatDate(project.reminder_date)}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground/40 font-mono">-</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-center">
                         <Link href={`/projects/${project.id}`}>
@@ -510,7 +556,7 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
                 </AnimatePresence>
                 {sortedProjects.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-20 text-muted-foreground italic">
+                    <TableCell colSpan={canEdit ? 13 : 12} className="text-center py-20 text-muted-foreground italic">
                       No projects match your search criteria.
                     </TableCell>
                   </TableRow>
@@ -549,6 +595,12 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
                         <MapPin className="h-3 w-3" />
                         <span className="truncate max-w-[200px]">{project.address}</span>
                       </div>
+                      {project.reminder_date && (
+                        <div className="flex items-center gap-1.5 text-primary text-xs font-medium pt-0.5">
+                          <Calendar className="h-3 w-3 shrink-0" />
+                          <span>Reminder: {formatDate(project.reminder_date)}</span>
+                        </div>
+                      )}
                     </div>
                     <Link href={`/projects/${project.id}`}>
                       <Button variant="outline" size="icon" className="h-10 w-10 rounded-full border-primary/20 text-primary hover:bg-primary/10 shadow-sm">

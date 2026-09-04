@@ -20,6 +20,8 @@ export interface Project {
   party_print_name?: string | null
   firm_name?: string | null
   balance: number
+  reminder_date?: string | null
+  last_call_remark?: string | null
   created_at: string
   updated_at: string
 }
@@ -106,7 +108,7 @@ export type ProjectSummary = Pick<Project,
   'hp_type' | 'hp_qty' | 'firm_name' |
   'sales_m_value' | 'm_outward_value' | 'm_balance' |
   'order_value' | 'extra_work_value' | 'payment_received' |
-  'work_remark' | 'salesman_name' | 'party_print_name' | 'balance' | 'created_at' | 'updated_at'
+  'work_remark' | 'salesman_name' | 'party_print_name' | 'balance' | 'reminder_date' | 'last_call_remark' | 'created_at' | 'updated_at'
 >
 
 export interface DBData {

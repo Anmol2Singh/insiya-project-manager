@@ -14,7 +14,7 @@ const fetcher = async (companyId: string): Promise<ProjectSummary[]> => {
   const supabase = createClient()
   const targetCompany = companyId || getActiveCompany().id || "insiya-solar"
 
-  const { data, error } = await supabase
+  const { data: projectsData, error } = await supabase
     .from("projects")
     .select("*")
     .eq("company_id", targetCompany)
@@ -25,8 +25,42 @@ const fetcher = async (companyId: string): Promise<ProjectSummary[]> => {
     throw error
   }
 
-  const projects = (data || []).map((project: any) => ({
+  const projectIds = (projectsData || []).map((p: any) => p.id)
+  const callDateMap: Record<string, string> = {}
+  const callRemarkMap: Record<string, string> = {}
+
+  if (projectIds.length > 0) {
+    try {
+      const { data: callData } = await supabase
+        .from("calling_records")
+        .select("project_id, date, description, created_at, sr_no")
+        .in("project_id", projectIds)
+        .order("date", { ascending: false })
+
+      if (callData) {
+        callData.forEach((rec: any) => {
+          if (!rec.project_id || !rec.date) return
+          if (!callDateMap[rec.project_id]) {
+            callDateMap[rec.project_id] = rec.date
+          } else {
+            if (new Date(rec.date).getTime() > new Date(callDateMap[rec.project_id]).getTime()) {
+              callDateMap[rec.project_id] = rec.date
+            }
+          }
+          if (!callRemarkMap[rec.project_id] && rec.description) {
+            callRemarkMap[rec.project_id] = rec.description
+          }
+        })
+      }
+    } catch (callErr) {
+      console.warn("Could not fetch calling records for homepage:", callErr)
+    }
+  }
+
+  const projects = (projectsData || []).map((project: any) => ({
     ...project,
+    reminder_date: callDateMap[project.id] || null,
+    last_call_remark: callRemarkMap[project.id] || null,
     balance: (project.order_value || 0) + (project.extra_work_value || 0) - (project.payment_received || 0)
   }))
 
@@ -70,6 +104,7 @@ export default function DashboardPage() {
     const idNo = project.id_no != null ? String(project.id_no).toLowerCase() : ""
     const workRemark = (project.work_remark || "").toString().toLowerCase()
     const partyName = (project.party_print_name || "").toString().toLowerCase()
+    const reminderDate = (project.reminder_date || "").toString().toLowerCase()
 
     return (
       siteName.includes(query) ||
@@ -78,7 +113,8 @@ export default function DashboardPage() {
       orderType.includes(query) ||
       idNo.includes(query) ||
       workRemark.includes(query) ||
-      partyName.includes(query)
+      partyName.includes(query) ||
+      reminderDate.includes(query)
     )
   })
 
