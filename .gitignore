@@ -31,3 +31,5 @@ yarn-error.log*
 next-env.d.ts
 
 /mobile_app/
+/scripts/
+*.sql

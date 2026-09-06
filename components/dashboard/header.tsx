@@ -17,6 +17,7 @@ import {
   PlusCircle,
   Settings,
   Trash2,
+  ReceiptText,
 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -461,54 +462,19 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
             )}
           </div>
 
-          {canEdit && (
-            <>
-              {/* Set PC Save Location Folder Button */}
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleSetSaveFolder}
-                className="bg-card text-foreground hover:bg-primary/10 hover:text-primary font-bold text-xs h-11 px-3 rounded-2xl border-border/80 shadow-sm shrink-0 flex items-center gap-1.5"
-                title={saveFolder ? `Current PC Save Folder: ${saveFolder}` : "Set PC Save Folder location for all exported files"}
-              >
-                <FolderOpen className="h-4 w-4 text-amber-500" />
-                <span className="hidden xl:inline text-xs truncate max-w-[110px]">
-                  {saveFolder ? saveFolder.split("\\").pop() || "Save Path" : "Save Location"}
-                </span>
-              </Button>
-
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleExportDatabase}
-                className="bg-card text-foreground hover:bg-primary/10 hover:text-primary font-bold text-xs h-11 px-4 rounded-2xl border-border/80 shadow-sm shrink-0"
-                title={`Download ${activeCompany.name} database backup (.json)`}
-              >
-                <Download className="h-4 w-4 mr-1.5 text-primary" />
-                Backup Database (.json)
-              </Button>
-
-              <input
-                type="file"
-                ref={fileInputRef}
-                accept=".json"
-                onChange={handleImportDatabase}
-                className="hidden"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => fileInputRef.current?.click()}
-                className="bg-card text-foreground hover:bg-primary/10 hover:text-primary font-bold text-xs h-11 px-3 rounded-2xl border-border/80 shadow-sm shrink-0"
-                title={`Restore ${activeCompany.name} database from .json backup file`}
-              >
-                <UploadCloud className="h-4 w-4" />
-              </Button>
-            </>
-          )}
+          {/* Daily Transaction Entry Button */}
+          <Link href="/daily-transactions">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="bg-primary/10 text-primary hover:bg-primary/20 font-bold text-xs h-11 px-4 rounded-2xl border-primary/20 shadow-sm shrink-0 flex items-center gap-2 transition-all hover:scale-105 active:scale-95"
+              title="Open Daily Transaction Entry"
+            >
+              <ReceiptText className="h-4 w-4" />
+              <span>Daily Transaction Entry</span>
+            </Button>
+          </Link>
         </div>
 
         <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
@@ -543,22 +509,74 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
           </DialogHeader>
 
           <div className="space-y-6 py-2">
-            {/* Backup Section */}
+            {/* Backup & Save Location Section */}
             {canEdit && (
-              <div className="bg-muted/30 p-4 rounded-2xl border border-border/50 space-y-3">
-                <div className="flex items-center justify-between">
+              <div className="bg-muted/30 p-4 rounded-2xl border border-border/50 space-y-4">
+                <h4 className="font-bold text-sm flex items-center gap-2">
+                  <Database className="h-4 w-4 text-primary" />
+                  Database Backup & Storage
+                </h4>
+
+                {/* PC Save Location */}
+                <div className="flex items-center justify-between gap-3 pt-2 border-t border-border/40">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-foreground">PC Save Folder Location</p>
+                    <p className="text-[11px] text-muted-foreground truncate" title={saveFolder || "Not configured"}>
+                      {saveFolder || "Default: D:\\Solar Reports"}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSetSaveFolder}
+                    className="rounded-xl font-bold text-xs h-9 px-3 shrink-0"
+                  >
+                    <FolderOpen className="h-3.5 w-3.5 mr-1.5 text-amber-500" />
+                    Set Location
+                  </Button>
+                </div>
+
+                {/* Backup Download */}
+                <div className="flex items-center justify-between gap-3 pt-2 border-t border-border/40">
                   <div>
-                    <h4 className="font-bold text-sm">Download Database Backup</h4>
-                    <p className="text-xs text-muted-foreground">Export full JSON backup for {activeCompany.name}</p>
+                    <p className="text-xs font-semibold text-foreground">Download Backup (.json)</p>
+                    <p className="text-[11px] text-muted-foreground">Full JSON data for {activeCompany.name}</p>
                   </div>
                   <Button
                     type="button"
                     onClick={handleExportDatabase}
-                    className="rounded-xl font-bold bg-primary text-primary-foreground text-xs h-9 px-3"
+                    className="rounded-xl font-bold bg-primary text-primary-foreground text-xs h-9 px-3 shrink-0"
                   >
                     <Download className="h-3.5 w-3.5 mr-1.5" />
-                    Backup (.json)
+                    Backup
                   </Button>
+                </div>
+
+                {/* Restore Database */}
+                <div className="flex items-center justify-between gap-3 pt-2 border-t border-border/40">
+                  <div>
+                    <p className="text-xs font-semibold text-foreground">Restore Database (.json)</p>
+                    <p className="text-[11px] text-muted-foreground">Upload previously exported backup</p>
+                  </div>
+                  <div>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      accept=".json"
+                      onChange={handleImportDatabase}
+                      className="hidden"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="rounded-xl font-bold text-xs h-9 px-3 shrink-0"
+                    >
+                      <UploadCloud className="h-3.5 w-3.5 mr-1.5 text-primary" />
+                      Restore
+                    </Button>
+                  </div>
                 </div>
               </div>
             )}
@@ -755,27 +773,17 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
           )}
         </div>
         <div className="flex gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleSetSaveFolder}
-            className="text-xs font-bold px-3"
-            title="Set PC Save Location Folder"
-          >
-            <FolderOpen className="h-3.5 w-3.5 mr-1 text-amber-500" />
-            Save Path
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleExportDatabase}
-            className="flex-1 text-xs font-bold"
-          >
-            <Download className="h-3.5 w-3.5 mr-1" />
-            Backup (.json)
-          </Button>
+          <Link href="/daily-transactions" className="flex-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full bg-primary/10 text-primary hover:bg-primary/20 font-bold text-xs h-10 rounded-xl border-primary/20 shadow-sm flex items-center justify-center gap-2"
+            >
+              <ReceiptText className="h-4 w-4" />
+              <span>Daily Transaction Entry</span>
+            </Button>
+          </Link>
         </div>
       </div>
 
@@ -788,7 +796,7 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
             exit={{ opacity: 0, height: 0 }}
             className="lg:hidden border-t border-border/50 bg-card/95 backdrop-blur-md overflow-hidden shadow-xl"
           >
-            <div className="px-4 py-6 space-y-4">
+            <div className="px-4 py-6 space-y-3">
               <Link
                 href="/"
                 className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-primary/10 text-primary font-bold transition-all"
@@ -796,6 +804,14 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
               >
                 <LayoutDashboard className="h-5 w-5" />
                 Dashboard Overview ({activeCompany.name})
+              </Link>
+              <Link
+                href="/daily-transactions"
+                className="flex items-center gap-3 px-4 py-3 rounded-2xl hover:bg-muted text-foreground font-semibold transition-all"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <ReceiptText className="h-5 w-5 text-primary" />
+                Daily Transaction Entry
               </Link>
               <Link
                 href="/projects/new"
