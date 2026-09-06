@@ -12,23 +12,19 @@ const geistMono = Geist_Mono({ subsets: ["latin"], variable: '--font-mono' });
 export const metadata: Metadata = {
   title: 'Heat Pump & SWH Project Manager',
   description: 'Manage Heat Pump and Solar Water Heater installation projects',
-  generator: 'v0.app',
   icons: {
     icon: [
       {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
+        url: '/icon.png',
+        sizes: 'any',
       },
       {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
+        url: '/favicon.ico',
+        sizes: 'any',
       },
     ],
-    apple: '/apple-icon.png',
+    shortcut: '/icon.png',
+    apple: '/icon.png',
   },
 }
 
