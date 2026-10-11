@@ -2,21 +2,24 @@
 
 import { use } from "react"
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import useSWR from "swr"
 import { ArrowLeft } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { ProjectForm } from "@/components/project/project-form"
+import { useRecordMode } from "@/lib/record-mode-store"
 import type { Project } from "@/lib/types"
 
 interface EditProjectPageProps {
   params: Promise<{ id: string }>
 }
 
-const fetchProject = async (id: string): Promise<Project> => {
+const fetchProject = async (id: string, isPurchase: boolean): Promise<Project> => {
   const supabase = createClient()
+  const table = isPurchase ? "purchases" : "projects"
   const { data, error } = await supabase
-    .from("projects")
+    .from(table)
     .select("*")
     .eq("id", id)
     .single()
@@ -27,7 +30,11 @@ const fetchProject = async (id: string): Promise<Project> => {
 
 export default function EditProjectPage({ params }: EditProjectPageProps) {
   const { id } = use(params)
-  const { data: project, error, isLoading } = useSWR(`project-edit-${id}`, () => fetchProject(id))
+  const searchParams = useSearchParams()
+  const { isPurchase: isGlobalPurchase } = useRecordMode()
+  const isPurchase = searchParams?.get("mode") === "purchase" || isGlobalPurchase
+
+  const { data: project, error, isLoading } = useSWR(`project-edit-${id}-${isPurchase}`, () => fetchProject(id, isPurchase))
 
   if (error) {
     return (
@@ -63,22 +70,22 @@ export default function EditProjectPage({ params }: EditProjectPageProps) {
       <header className="bg-card border-b border-border">
         <div className="px-4 py-4 lg:px-6">
           <div className="flex items-center gap-4">
-            <Link href={`/projects/${id}`}>
+            <Link href={`/projects/${id}${isPurchase ? '?mode=purchase' : ''}`}>
               <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
                 <ArrowLeft className="h-4 w-4 mr-2" />
-                Back to Project
+                {isPurchase ? "Back to Vendor" : "Back to Project"}
               </Button>
             </Link>
           </div>
           <h1 className="text-xl font-semibold text-foreground mt-4 lg:text-2xl">
-            Edit Project: {project.site_name}
+            {isPurchase ? `Edit Vendor: ${project.site_name}` : `Edit Project: ${project.site_name}`}
           </h1>
         </div>
       </header>
 
       <main className="p-4 lg:p-6">
         <div className="max-w-3xl mx-auto">
-          <ProjectForm project={project} mode="edit" />
+          <ProjectForm project={project} mode="edit" isPurchase={isPurchase} />
         </div>
       </main>
     </div>

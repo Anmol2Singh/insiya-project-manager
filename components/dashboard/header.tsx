@@ -18,6 +18,8 @@ import {
   Settings,
   Trash2,
   ReceiptText,
+  TrendingUp,
+  ShoppingBag,
 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -48,6 +50,7 @@ import {
   type Company,
 } from "@/lib/company-store"
 import { clearSession, isAdmin, hasEditPermission } from "@/lib/auth-store"
+import { useRecordMode } from "@/lib/record-mode-store"
 import { ChangeCredentialsDialog } from "@/components/auth/change-credentials-dialog"
 import { ManageUsersDialog } from "@/components/auth/manage-users-dialog"
 import { PdfColumnsDialog } from "@/components/dashboard/pdf-columns-dialog"
@@ -64,6 +67,8 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
   const [saveFolder, setSaveFolder] = useState<string>("")
   const [companies, setCompaniesList] = useState<Company[]>([])
   const [activeCompany, setActiveComp] = useState<Company>({ id: "insiya-solar", name: "Insiya Solar Industry" })
+
+  const { mode, setMode, isPurchase } = useRecordMode()
 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [addCompanyOpen, setAddCompanyOpen] = useState(false)
@@ -209,6 +214,30 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
         workRemarks = wr.data || []
       }
 
+      // Fetch all purchases for this company
+      let purchasesList: any[] = []
+      let purchaseLedgerEntries: any[] = []
+      let purchaseCallingRecords: any[] = []
+      try {
+        const { data: purData } = await supabase
+          .from("purchases")
+          .select("*")
+          .eq("company_id", companyId)
+          .order("id_no", { ascending: true })
+        purchasesList = purData || []
+        const purchaseIds = purchasesList.map((p: any) => p.id)
+        if (purchaseIds.length > 0) {
+          const [ple, pcr] = await Promise.all([
+            supabase.from("purchase_ledger_entries").select("*").in("purchase_id", purchaseIds),
+            supabase.from("purchase_calling_records").select("*").in("purchase_id", purchaseIds),
+          ])
+          purchaseLedgerEntries = ple.data || []
+          purchaseCallingRecords = pcr.data || []
+        }
+      } catch (purErr) {
+        console.warn("Purchases not exported:", purErr)
+      }
+
       const data = {
         projects: projectsList,
         payment_terms: paymentTerms,
@@ -217,6 +246,9 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
         calling_records: callingRecords,
         swh_checklist: swhChecklist,
         work_remarks: workRemarks,
+        purchases: purchasesList,
+        purchase_ledger_entries: purchaseLedgerEntries,
+        purchase_calling_records: purchaseCallingRecords,
       }
 
       const jsonStr = JSON.stringify(data, null, 2)
@@ -235,10 +267,8 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
       const saveMsg = saveFolder ? ` (Folder: ${saveFolder})` : ""
       toast.success(
         `Database exported for ${activeCompany.name}!${saveMsg}\n` +
-        `${projectsList.length} projects, ${ledgerEntries.length} ledger entries, ` +
-        `${paymentTerms.length} payment terms, ${expenses.length} expenses, ` +
-        `${callingRecords.length} calling records, ${swhChecklist.length} checklist items, ` +
-        `${workRemarks.length} work remarks.`
+        `${projectsList.length} projects, ${purchasesList.length} purchases, ` +
+        `${ledgerEntries.length} sales ledger, ${purchaseLedgerEntries.length} purchase ledger entries.`
       )
     } catch (e: any) {
       console.error("Export database error:", e)
@@ -360,10 +390,60 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
           }
         }
 
+        // -- Step 3: Import purchases if present in backup --
+        const purchasesInBackup: any[] = parsed.purchases || []
+        const purchaseIdMap: Record<string, string> = {}
+        let purchasesImported = 0
+
+        for (const pur of purchasesInBackup) {
+          const oldPurId = pur.id
+          const { id: _purId, created_at: _ca, updated_at: _ua, ...insertPayload } = pur
+          insertPayload.company_id = activeCompany.id
+          try {
+            const { data: newPur } = await supabase.from("purchases").insert(insertPayload).select("id").single()
+            if (newPur && (newPur as any).id) {
+              purchaseIdMap[oldPurId] = (newPur as any).id
+              purchasesImported++
+            }
+          } catch (e) {
+            console.warn("Could not insert purchase backup record:", e)
+          }
+        }
+
+        if (parsed.purchase_ledger_entries) {
+          for (const ple of parsed.purchase_ledger_entries) {
+            const newPurId = purchaseIdMap[ple.purchase_id]
+            if (!newPurId) continue
+            const { id: _pleId, ...insertPayload } = ple
+            insertPayload.purchase_id = newPurId
+            insertPayload.project_id = newPurId
+            try {
+              await supabase.from("purchase_ledger_entries").insert(insertPayload)
+            } catch (e) {
+              console.warn("Could not insert purchase ledger entry:", e)
+            }
+          }
+        }
+
+        if (parsed.purchase_calling_records) {
+          for (const pcr of parsed.purchase_calling_records) {
+            const newPurId = purchaseIdMap[pcr.purchase_id]
+            if (!newPurId) continue
+            const { id: _pcrId, ...insertPayload } = pcr
+            insertPayload.purchase_id = newPurId
+            try {
+              await supabase.from("purchase_calling_records").insert(insertPayload)
+            } catch (e) {
+              console.warn("Could not insert purchase calling record:", e)
+            }
+          }
+        }
+
         toast.dismiss(toastId)
         toast.success(
           `Database restored for ${activeCompany.name}!\n` +
           `Projects: ${projectsInserted} added, ${projectsUpdated} updated.\n` +
+          (purchasesImported > 0 ? `Purchases: ${purchasesImported} imported.\n` : "") +
           `Related records: ${childInserted} imported` +
           (childSkipped > 0 ? `, ${childSkipped} skipped.` : ".")
         )
@@ -381,7 +461,7 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
   return (
     <header className="sticky top-0 z-50 bg-card/80 backdrop-blur-xl border-b border-border/50 shadow-sm">
       <div className="flex items-center justify-between px-4 py-4 lg:px-8 max-w-[1600px] mx-auto gap-4">
-        <div className="flex items-center gap-4 lg:gap-8">
+        <div className="flex items-center gap-3 lg:gap-6 shrink-0">
           <button
             type="button"
             className="lg:hidden p-2 rounded-xl hover:bg-muted transition-colors"
@@ -397,7 +477,7 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
                 <div className="h-10 w-10 rounded-full bg-primary flex items-center justify-center shrink-0 shadow-sm">
                   <Building2 className="h-5 w-5 text-primary-foreground" />
                 </div>
-                <div className="flex flex-col items-start gap-0.5 max-w-[130px] sm:max-w-[300px]">
+                <div className="flex flex-col items-start gap-0.5 max-w-[160px] sm:max-w-[340px] md:max-w-[420px] min-w-0">
                   <span className="text-base sm:text-lg font-extrabold truncate w-full leading-tight text-foreground">
                     {mounted ? activeCompany.name : "Loading..."}
                   </span>
@@ -437,6 +517,42 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
               )}
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {/* Mode Switcher Toggle Button (Sales vs Purchase) */}
+          <div className="flex items-center p-1 bg-muted/70 backdrop-blur-md rounded-2xl border border-border/60 shadow-inner">
+            <button
+              type="button"
+              onClick={() => {
+                setMode("sales")
+                toast.success("Switched to Sales Mode")
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold uppercase tracking-wider transition-all duration-200 ${
+                mode === "sales"
+                  ? "bg-primary text-primary-foreground shadow-sm scale-100"
+                  : "text-muted-foreground hover:text-foreground hover:bg-background/40"
+              }`}
+              title="Switch to Sales Records"
+            >
+              <TrendingUp className="h-3.5 w-3.5" />
+              <span>Sales</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMode("purchase")
+                toast.success("Switched to Purchase Mode")
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold uppercase tracking-wider transition-all duration-200 ${
+                mode === "purchase"
+                  ? "bg-emerald-600 text-white shadow-sm scale-100 dark:bg-emerald-500"
+                  : "text-muted-foreground hover:text-foreground hover:bg-background/40"
+              }`}
+              title="Switch to Purchase Records"
+            >
+              <ShoppingBag className="h-3.5 w-3.5" />
+              <span>Purchase</span>
+            </button>
+          </div>
         </div>
 
         {/* Search bar + Folder Save Location + Clear (X) + Database Export/Import */}
@@ -445,7 +561,7 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
             <Input
               type="text"
-              placeholder={`Search ${activeCompany.name} (name, phone, address, ID)...`}
+              placeholder={isPurchase ? `Search ${activeCompany.name} (vendor, phone, address, ID)...` : `Search ${activeCompany.name} (name, phone, address, ID)...`}
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
               className="pl-11 pr-10 bg-muted/50 border-border/50 focus:bg-background focus:ring-primary/20 transition-all rounded-2xl h-11 text-sm"
@@ -478,10 +594,10 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
         </div>
 
         <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-          <Link href="/projects/new">
+          <Link href={isPurchase ? "/projects/new?mode=purchase" : "/projects/new"}>
             <Button className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20 rounded-2xl h-11 px-3 sm:px-6 font-bold">
               <Plus className="h-4 w-4 sm:mr-2" />
-              <span className="hidden sm:inline">Add Customer</span>
+              <span className="hidden sm:inline">{isPurchase ? "Add Vendor" : "Add Customer"}</span>
             </Button>
           </Link>
 
@@ -797,6 +913,36 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
             className="lg:hidden border-t border-border/50 bg-card/95 backdrop-blur-md overflow-hidden shadow-xl"
           >
             <div className="px-4 py-6 space-y-3">
+              {/* Mobile Mode Switcher */}
+              <div className="flex items-center justify-between p-1.5 bg-muted/70 rounded-2xl border border-border/60 mb-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("sales")
+                    toast.success("Switched to Sales Mode")
+                  }}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-extrabold uppercase tracking-wider transition-all ${
+                    mode === "sales" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground"
+                  }`}
+                >
+                  <TrendingUp className="h-4 w-4" />
+                  <span>Sales</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("purchase")
+                    toast.success("Switched to Purchase Mode")
+                  }}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-extrabold uppercase tracking-wider transition-all ${
+                    mode === "purchase" ? "bg-emerald-600 text-white shadow-sm dark:bg-emerald-500" : "text-muted-foreground"
+                  }`}
+                >
+                  <ShoppingBag className="h-4 w-4" />
+                  <span>Purchase</span>
+                </button>
+              </div>
+
               <Link
                 href="/"
                 className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-primary/10 text-primary font-bold transition-all"
@@ -814,12 +960,12 @@ export function DashboardHeader({ searchQuery, onSearchChange, onDatabaseImport 
                 Daily Transaction Entry
               </Link>
               <Link
-                href="/projects/new"
+                href={isPurchase ? "/projects/new?mode=purchase" : "/projects/new"}
                 className="flex items-center gap-3 px-4 py-3 rounded-2xl hover:bg-muted text-foreground font-semibold transition-all"
                 onClick={() => setMobileMenuOpen(false)}
               >
                 <Plus className="h-5 w-5" />
-                Add New Customer
+                {isPurchase ? "Add New Vendor" : "Add New Customer"}
               </Link>
             </div>
           </motion.nav>

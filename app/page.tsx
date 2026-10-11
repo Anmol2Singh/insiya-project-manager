@@ -5,50 +5,59 @@ import useSWR from "swr"
 import { motion } from "framer-motion"
 import { createClient } from "@/lib/supabase/client"
 import { getActiveCompany } from "@/lib/company-store"
+import { useRecordMode } from "@/lib/record-mode-store"
 import { DashboardHeader } from "@/components/dashboard/header"
 import { SummaryCards } from "@/components/dashboard/summary-cards"
 import { ProjectsTable } from "@/components/dashboard/projects-table"
 import type { ProjectSummary } from "@/lib/types"
 
-const fetcher = async (companyId: string): Promise<ProjectSummary[]> => {
+const fetcher = async (companyId: string, mode: "sales" | "purchase"): Promise<ProjectSummary[]> => {
   const supabase = createClient()
   const targetCompany = companyId || getActiveCompany().id || "insiya-solar"
+  const isPurchase = mode === "purchase"
+  const targetTable = isPurchase ? "purchases" : "projects"
+  const callsTable = isPurchase ? "purchase_calling_records" : "calling_records"
+  const callForeignKey = isPurchase ? "purchase_id" : "project_id"
 
-  const { data: projectsData, error } = await supabase
-    .from("projects")
+  const { data: recordsData, error } = await supabase
+    .from(targetTable)
     .select("*")
     .eq("company_id", targetCompany)
     .order("id_no", { ascending: false })
 
   if (error) {
-    console.error("Supabase projects fetch error:", error)
+    console.error(`Supabase ${targetTable} fetch error:`, error)
+    if (isPurchase && (error.code === "PGRST205" || error.message?.includes("purchases"))) {
+      return []
+    }
     throw error
   }
 
-  const projectIds = (projectsData || []).map((p: any) => p.id)
+  const recordIds = (recordsData || []).map((p: any) => p.id)
   const callDateMap: Record<string, string> = {}
   const callRemarkMap: Record<string, string> = {}
 
-  if (projectIds.length > 0) {
+  if (recordIds.length > 0) {
     try {
       const { data: callData } = await supabase
-        .from("calling_records")
-        .select("project_id, date, description, created_at, sr_no")
-        .in("project_id", projectIds)
+        .from(callsTable)
+        .select(`${callForeignKey}, date, description, created_at, sr_no`)
+        .in(callForeignKey, recordIds)
         .order("date", { ascending: false })
 
       if (callData) {
         callData.forEach((rec: any) => {
-          if (!rec.project_id || !rec.date) return
-          if (!callDateMap[rec.project_id]) {
-            callDateMap[rec.project_id] = rec.date
+          const recId = rec[callForeignKey]
+          if (!recId || !rec.date) return
+          if (!callDateMap[recId]) {
+            callDateMap[recId] = rec.date
           } else {
-            if (new Date(rec.date).getTime() > new Date(callDateMap[rec.project_id]).getTime()) {
-              callDateMap[rec.project_id] = rec.date
+            if (new Date(rec.date).getTime() > new Date(callDateMap[recId]).getTime()) {
+              callDateMap[recId] = rec.date
             }
           }
-          if (!callRemarkMap[rec.project_id] && rec.description) {
-            callRemarkMap[rec.project_id] = rec.description
+          if (!callRemarkMap[recId] && rec.description) {
+            callRemarkMap[recId] = rec.description
           }
         })
       }
@@ -57,19 +66,37 @@ const fetcher = async (companyId: string): Promise<ProjectSummary[]> => {
     }
   }
 
-  const projects = (projectsData || []).map((project: any) => ({
-    ...project,
-    reminder_date: callDateMap[project.id] || null,
-    last_call_remark: callRemarkMap[project.id] || null,
-    balance: (project.order_value || 0) + (project.extra_work_value || 0) - (project.payment_received || 0)
-  }))
+  const records = (recordsData || []).map((rec: any) => {
+    if (isPurchase) {
+      const qVal = rec.quotation_value ?? rec.order_value ?? 0
+      const pPaid = rec.payment_paid ?? rec.payment_received ?? 0
+      return {
+        ...rec,
+        quotation_value: qVal,
+        order_value: qVal,
+        payment_paid: pPaid,
+        payment_received: pPaid,
+        extra_work_value: 0,
+        reminder_date: callDateMap[rec.id] || null,
+        last_call_remark: callRemarkMap[rec.id] || null,
+        balance: qVal - pPaid
+      }
+    }
+    return {
+      ...rec,
+      reminder_date: callDateMap[rec.id] || null,
+      last_call_remark: callRemarkMap[rec.id] || null,
+      balance: (rec.order_value || 0) + (rec.extra_work_value || 0) - (rec.payment_received || 0)
+    }
+  })
 
-  return projects as ProjectSummary[]
+  return records as ProjectSummary[]
 }
 
 export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [activeCompanyId, setActiveCompanyId] = useState<string>("insiya-solar")
+  const { mode, isPurchase } = useRecordMode()
 
   useEffect(() => {
     setActiveCompanyId(getActiveCompany().id)
@@ -88,8 +115,8 @@ export default function DashboardPage() {
   }, [activeCompanyId])
 
   const { data: projects = [], error, isLoading, mutate } = useSWR(
-    ["projects", activeCompanyId],
-    ([, compId]) => fetcher(compId)
+    ["records", activeCompanyId, mode],
+    ([, compId, currentMode]) => fetcher(compId, currentMode as "sales" | "purchase")
   )
 
   const filteredProjects = projects.filter((project) => {
@@ -132,7 +159,7 @@ export default function DashboardPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
         >
-          <SummaryCards projects={projects} isLoading={isLoading} />
+          <SummaryCards projects={projects} isLoading={isLoading} isPurchase={isPurchase} />
         </motion.div>
 
         <motion.div
@@ -145,6 +172,7 @@ export default function DashboardPage() {
             isLoading={isLoading}
             error={error}
             onMutate={() => mutate()}
+            isPurchase={isPurchase}
           />
         </motion.div>
       </main>

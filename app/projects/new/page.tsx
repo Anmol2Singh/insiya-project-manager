@@ -1,12 +1,18 @@
 "use client"
 
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import { ArrowLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ProjectForm } from "@/components/project/project-form"
 import { motion } from "framer-motion"
+import { useRecordMode } from "@/lib/record-mode-store"
 
 export default function NewProjectPage() {
+  const searchParams = useSearchParams()
+  const { isPurchase: isGlobalPurchase } = useRecordMode()
+  const isPurchase = searchParams?.get("mode") === "purchase" || isGlobalPurchase
+
   return (
     <div className="min-h-screen bg-background">
       <header className="bg-card/80 backdrop-blur-xl border-b border-border/50 shadow-sm sticky top-0 z-50">
@@ -21,9 +27,11 @@ export default function NewProjectPage() {
           </div>
           <div className="mt-8">
             <h1 className="text-3xl font-extrabold text-foreground tracking-tight lg:text-4xl">
-              Create New Project
+              {isPurchase ? "Add New Vendor" : "Create New Project"}
             </h1>
-            <p className="text-muted-foreground mt-2 font-medium">Enter site details to begin tracking installation progress.</p>
+            <p className="text-muted-foreground mt-2 font-medium">
+              {isPurchase ? "Enter vendor details to begin tracking purchase orders and bills." : "Enter site details to begin tracking installation progress."}
+            </p>
           </div>
         </div>
       </header>

@@ -23,11 +23,12 @@ interface UpdateExcelDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSuccess: () => void
+  isPurchase?: boolean
 }
 
 type MatchKey = "id" | "site_name"
 
-const AVAILABLE_COLUMNS = [
+const SALES_COLUMNS = [
   { label: "ID Number", field: "id_no" },
   { label: "Item Group", field: "order_type" },
   { label: "Item Name", field: "hp_type" },
@@ -46,7 +47,20 @@ const AVAILABLE_COLUMNS = [
   { label: "Last Work Remark", field: "work_remark" },
 ]
 
-export function UpdateExcelDialog({ open, onOpenChange, onSuccess }: UpdateExcelDialogProps) {
+const PURCHASE_COLUMNS = [
+  { label: "Vendor ID", field: "id_no" },
+  { label: "Item Group", field: "order_type" },
+  { label: "Vendor Name", field: "site_name" },
+  { label: "Firm Name", field: "firm_name" },
+  { label: "Party Print Name", field: "party_print_name" },
+  { label: "Mobile Number", field: "mobile_number" },
+  { label: "Vendor Address", field: "address" },
+  { label: "Quotation Value (Rs)", field: "order_value" },
+  { label: "Payment Paid (Rs)", field: "payment_received" },
+]
+
+export function UpdateExcelDialog({ open, onOpenChange, onSuccess, isPurchase = false }: UpdateExcelDialogProps) {
+  const availableColumns = isPurchase ? PURCHASE_COLUMNS : SALES_COLUMNS
   const [file, setFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
   const [updateProgress, setUpdateProgress] = useState(0)
@@ -66,6 +80,28 @@ export function UpdateExcelDialog({ open, onOpenChange, onSuccess }: UpdateExcel
   }, [open])
 
   const handleDownloadTemplate = () => {
+    if (isPurchase) {
+      const templateData = [
+        {
+          "Vendor ID": 1001,
+          "Vendor Name": "Sample Vendor 1",
+          "Firm Name": "Insiya Solar Industry",
+          "Party Print Name": "Sample Vendor Corp",
+          "Mobile Number": "+91 9876543210",
+          "Vendor Address": "Pune, Maharashtra",
+          "Item Group": "Heat Pump",
+          "Quotation Value (Rs)": 50000,
+          "Payment Paid (Rs)": 20000,
+        },
+      ]
+      const worksheet = XLSX.utils.json_to_sheet(templateData)
+      const workbook = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Template")
+      XLSX.writeFile(workbook, "Update_Vendor_Template.xlsx")
+      toast.success("Vendor template downloaded!")
+      return
+    }
+
     const templateData = [
       {
         "ID Number": 1001,
@@ -117,7 +153,7 @@ export function UpdateExcelDialog({ open, onOpenChange, onSuccess }: UpdateExcel
         // Auto-select columns that exist in the file (excluding match key equivalents)
         const headers = Object.keys(data[0] as object)
         const autoSelected = new Set<string>()
-        AVAILABLE_COLUMNS.forEach(col => {
+        availableColumns.forEach(col => {
           if (headers.includes(col.label)) {
             autoSelected.add(col.field)
           }
@@ -158,7 +194,8 @@ export function UpdateExcelDialog({ open, onOpenChange, onSuccess }: UpdateExcel
     try {
       const supabase = createClient()
       const company = getActiveCompany()
-      const { data: existingProjects } = await supabase.from("projects").select("*").eq("company_id", company?.id)
+      const targetTable = isPurchase ? "purchases" : "projects"
+      const { data: existingProjects } = await supabase.from(targetTable).select("*").eq("company_id", company?.id)
       const projectsList: any[] = existingProjects || []
 
       let updatedCount = 0
@@ -174,13 +211,13 @@ export function UpdateExcelDialog({ open, onOpenChange, onSuccess }: UpdateExcel
 
         // 1. Find Existing Record based on Match Key
         if (matchKey === "id") {
-          const id_no_val = row["ID Number"] || row["Customer ID"] || row["ID"] || row["id_no"] || row["Id Number"]
+          const id_no_val = row["Vendor ID"] || row["ID Number"] || row["Customer ID"] || row["ID"] || row["id_no"] || row["Id Number"]
           const id_no = id_no_val ? parseInt(id_no_val) : null
           if (id_no && !isNaN(id_no)) {
              existing = projectsList.find((p) => p.id_no === id_no)
           }
         } else {
-          const site_name = row["Customer / Site Name"] || row["Site Name"] || row["Site"] || row["site_name"] || row["Name"] || ""
+          const site_name = row["Vendor Name"] || row["Customer / Site Name"] || row["Site Name"] || row["Site"] || row["site_name"] || row["Name"] || ""
           const currentSiteName = normalize(site_name)
           if (currentSiteName) {
             existing = projectsList.find((p) => normalize(p.site_name) === currentSiteName)
@@ -192,12 +229,14 @@ export function UpdateExcelDialog({ open, onOpenChange, onSuccess }: UpdateExcel
           const updatePayload: any = {}
           let hasChanges = false
 
-          AVAILABLE_COLUMNS.forEach(col => {
+          availableColumns.forEach(col => {
             if (selectedColumns.has(col.field)) {
                let val = row[col.label]
                // Some aliases checks just in case
-               if (val === undefined && col.field === "site_name") val = row["Site Name"] || row["Site"] || row["site_name"] || row["Name"]
-               if (val === undefined && col.field === "order_value") val = row["Order Value"] || row["order_value"]
+               if (val === undefined && col.field === "site_name") val = row["Vendor Name"] || row["Site Name"] || row["Site"] || row["site_name"] || row["Name"]
+               if (val === undefined && col.field === "address") val = row["Vendor Address"] || row["Address"] || row["address"]
+               if (val === undefined && col.field === "order_value") val = row["Quotation Value (Rs)"] || row["Quotation Value"] || row["Order Value"] || row["order_value"]
+               if (val === undefined && col.field === "payment_received") val = row["Payment Paid (Rs)"] || row["Payment Paid"] || row["Payment Received"] || row["payment_received"]
                if (val === undefined && col.field === "hp_qty") val = row["HP Qty"] || row["hp_qty"]
                if (val === undefined && col.field === "tank_qty") val = row["tank_qty"]
                if (val === undefined && col.field === "work_remark") val = row["Remark"] || row["work_remark"]
@@ -222,8 +261,20 @@ export function UpdateExcelDialog({ open, onOpenChange, onSuccess }: UpdateExcel
             }
           })
 
+          if (isPurchase) {
+            if (updatePayload.order_value !== undefined) {
+              updatePayload.quotation_value = updatePayload.order_value
+            }
+            if (updatePayload.payment_received !== undefined) {
+              updatePayload.payment_paid = updatePayload.payment_received
+            }
+            const currentQuotation = updatePayload.order_value !== undefined ? updatePayload.order_value : (existing.quotation_value ?? existing.order_value ?? 0)
+            const currentPaid = updatePayload.payment_received !== undefined ? updatePayload.payment_received : (existing.payment_paid ?? existing.payment_received ?? 0)
+            updatePayload.balance = currentQuotation - currentPaid
+          }
+
           if (hasChanges) {
-            await supabase.from("projects").update(updatePayload).eq("id", existing.id)
+            await supabase.from(targetTable).update(updatePayload).eq("id", existing.id)
             updatedCount++
           } else {
             skippedCount++ // Matched but no changes
@@ -235,7 +286,8 @@ export function UpdateExcelDialog({ open, onOpenChange, onSuccess }: UpdateExcel
 
       setUpdateProgress(100)
       setTimeout(() => {
-        const successMsg = `Update completed: ${updatedCount} records updated, ${skippedCount} skipped.`
+        const entityLabel = isPurchase ? "vendor" : "customer"
+        const successMsg = `Update completed: ${updatedCount} ${entityLabel} records updated, ${skippedCount} skipped.`
         toast.success(successMsg)
         setTimeout(() => alert(successMsg), 100)
         onSuccess()
@@ -341,11 +393,13 @@ export function UpdateExcelDialog({ open, onOpenChange, onSuccess }: UpdateExcel
                 </div>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="site_name" id="r2" />
-                  <Label htmlFor="r2" className="cursor-pointer">Match by Customer / Site Name</Label>
+                  <Label htmlFor="r2" className="cursor-pointer">
+                    {isPurchase ? "Match by Vendor Name" : "Match by Customer / Site Name"}
+                  </Label>
                 </div>
               </RadioGroup>
               <p className="text-xs text-muted-foreground px-1">
-                Records in the file without a matching {matchKey === "id" ? "ID" : "Customer Name"} in the database will be skipped.
+                Records in the file without a matching {matchKey === "id" ? "ID" : (isPurchase ? "Vendor Name" : "Customer Name")} in the database will be skipped.
               </p>
             </div>
 
@@ -354,7 +408,7 @@ export function UpdateExcelDialog({ open, onOpenChange, onSuccess }: UpdateExcel
                 Step 2: Select Columns to Update <ArrowRight className="h-3 w-3 text-muted-foreground" />
               </Label>
               <div className="bg-muted/20 p-4 rounded-xl border border-border/50 grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto">
-                {AVAILABLE_COLUMNS.map((col) => {
+                {availableColumns.map((col) => {
                   // Disable if it's the match key
                   if (matchKey === "id" && col.field === "id_no") return null;
                   if (matchKey === "site_name" && col.field === "site_name") return null;

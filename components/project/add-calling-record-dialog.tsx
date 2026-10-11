@@ -22,9 +22,10 @@ interface AddCallingRecordDialogProps {
   nextSrNo: number
   record?: CallingRecord | null
   onSuccess: () => void
+  isPurchase?: boolean
 }
 
-export function AddCallingRecordDialog({ open, onOpenChange, projectId, nextSrNo, record, onSuccess }: AddCallingRecordDialogProps) {
+export function AddCallingRecordDialog({ open, onOpenChange, projectId, nextSrNo, record, onSuccess, isPurchase = false }: AddCallingRecordDialogProps) {
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split("T")[0],
@@ -51,17 +52,23 @@ export function AddCallingRecordDialog({ open, onOpenChange, projectId, nextSrNo
 
     try {
       const supabase = createClient()
+      const targetTable = isPurchase ? "purchase_calling_records" : "calling_records"
 
-      const payload = {
-        project_id: projectId,
+      const payload: any = {
         sr_no: record ? record.sr_no : nextSrNo,
         date: formData.date,
         description: formData.description || null,
       }
+      if (isPurchase) {
+        payload.purchase_id = projectId
+        payload.project_id = projectId
+      } else {
+        payload.project_id = projectId
+      }
 
       if (record) {
         const { error } = await supabase
-          .from("calling_records")
+          .from(targetTable)
           .update(payload)
           .eq("id", record.id)
 
@@ -69,7 +76,7 @@ export function AddCallingRecordDialog({ open, onOpenChange, projectId, nextSrNo
         toast.success("Calling record updated successfully")
       } else {
         const { error } = await supabase
-          .from("calling_records")
+          .from(targetTable)
           .insert(payload)
 
         if (error) throw error

@@ -22,9 +22,10 @@ interface CallingRecordsTabProps {
   records: CallingRecord[]
   projectId: string
   onRefresh: () => void
+  isPurchase?: boolean
 }
 
-export function CallingRecordsTab({ records, projectId, onRefresh }: CallingRecordsTabProps) {
+export function CallingRecordsTab({ records, projectId, onRefresh, isPurchase = false }: CallingRecordsTabProps) {
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [editingRecord, setEditingRecord] = useState<CallingRecord | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -48,8 +49,9 @@ export function CallingRecordsTab({ records, projectId, onRefresh }: CallingReco
     setDeletingId(recordId)
     try {
       const supabase = createClient()
+      const targetTable = isPurchase ? "purchase_calling_records" : "calling_records"
       const { error } = await supabase
-        .from("calling_records")
+        .from(targetTable)
         .delete()
         .eq("id", recordId)
 
@@ -191,6 +193,7 @@ export function CallingRecordsTab({ records, projectId, onRefresh }: CallingReco
         nextSrNo={records.length + 1}
         record={editingRecord}
         onSuccess={onRefresh}
+        isPurchase={isPurchase}
       />
     </>
   )

@@ -8,15 +8,16 @@ import type { ProjectSummary } from "@/lib/types"
 interface SummaryCardsProps {
   projects: ProjectSummary[]
   isLoading?: boolean
+  isPurchase?: boolean
 }
 
-export function SummaryCards({ projects }: SummaryCardsProps) {
+export function SummaryCards({ projects, isPurchase = false }: SummaryCardsProps) {
   const totals = projects.reduce(
     (acc, project) => ({
       salesMValue: acc.salesMValue + (project.sales_m_value || 0),
       mOutwardValue: acc.mOutwardValue + (project.m_outward_value || 0),
-      orderValue: acc.orderValue + (project.order_value || 0),
-      paymentReceived: acc.paymentReceived + (project.payment_received || 0),
+      orderValue: acc.orderValue + (project.quotation_value || project.order_value || 0),
+      paymentReceived: acc.paymentReceived + (project.payment_paid !== undefined && project.payment_paid !== null ? project.payment_paid : (project.payment_received || 0)),
       balance: acc.balance + (project.balance || 0),
     }),
     { salesMValue: 0, mOutwardValue: 0, orderValue: 0, paymentReceived: 0, balance: 0 }
@@ -31,61 +32,93 @@ export function SummaryCards({ projects }: SummaryCardsProps) {
     }).format(value)
   }
 
-  const cards = [
-    {
-      title: "Active Projects",
-      value: projects.length.toString(),
-      icon: Briefcase,
-      color: "primary",
-      description: "Total projects managed"
-    },
-    {
-      title: "Total Order Value",
-      value: formatCurrency(totals.orderValue),
-      icon: IndianRupee,
-      color: "info",
-      description: "Combined contract values"
-    },
-    {
-      title: "Payment Received",
-      value: formatCurrency(totals.paymentReceived),
-      icon: Wallet,
-      color: "success",
-      description: "Total funds collected"
-    },
-    {
-      title: "Outstanding Balance",
-      value: formatCurrency(totals.balance),
-      icon: TrendingDown,
-      color: totals.balance > 0 ? "success" : "destructive",
-      description: "Remaining to be collected"
-    },
-  ]
+  const cards = isPurchase
+    ? [
+        {
+          title: "Active Vendors",
+          value: projects.length.toString(),
+          icon: Briefcase,
+          color: "primary",
+          description: "Total vendors managed"
+        },
+        {
+          title: "Total Quotation Value",
+          value: formatCurrency(totals.orderValue),
+          icon: IndianRupee,
+          color: "info",
+          description: "Combined quotation values"
+        },
+        {
+          title: "Payment Paid",
+          value: formatCurrency(totals.paymentReceived),
+          icon: Wallet,
+          color: "success",
+          description: "Total funds paid out"
+        },
+        {
+          title: "Outstanding Balance",
+          value: formatCurrency(totals.balance),
+          icon: TrendingDown,
+          color: totals.balance > 0 ? "success" : "destructive",
+          description: "Remaining to be paid"
+        },
+      ]
+    : [
+        {
+          title: "Active Projects",
+          value: projects.length.toString(),
+          icon: Briefcase,
+          color: "primary",
+          description: "Total projects managed"
+        },
+        {
+          title: "Total Order Value",
+          value: formatCurrency(totals.orderValue),
+          icon: IndianRupee,
+          color: "info",
+          description: "Combined contract values"
+        },
+        {
+          title: "Payment Received",
+          value: formatCurrency(totals.paymentReceived),
+          icon: Wallet,
+          color: "success",
+          description: "Total funds collected"
+        },
+        {
+          title: "Outstanding Balance",
+          value: formatCurrency(totals.balance),
+          icon: TrendingDown,
+          color: totals.balance > 0 ? "success" : "destructive",
+          description: "Remaining to be collected"
+        },
+      ]
 
   const container = {
     hidden: { opacity: 0 },
     show: {
       opacity: 1,
       transition: {
-        staggerChildren: 0.1
+        staggerChildren: 0.08
       }
     }
   }
 
   const item = {
-    hidden: { y: 20, opacity: 0 },
+    hidden: { y: 15, opacity: 0 },
     show: { y: 0, opacity: 1 }
   }
 
   return (
     <motion.div
+      key={isPurchase ? "purchase-cards" : "sales-cards"}
       variants={container}
       initial="hidden"
       animate="show"
       className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
     >
       {cards.map((card) => (
-        <motion.div key={card.title} variants={item}>
+        <motion.div key={`${isPurchase ? "pur" : "sales"}-${card.title}`} variants={item}>
           <Card className="border-0 shadow-md hover:shadow-lg transition-shadow bg-card/60 backdrop-blur-md overflow-hidden group">
             <CardContent className="p-5">
               <div className="flex items-start justify-between">

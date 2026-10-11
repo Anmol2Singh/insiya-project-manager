@@ -58,12 +58,13 @@ interface ProjectsTableProps {
   error?: any
   onMutate?: () => void
   onRefresh?: () => void
+  isPurchase?: boolean
 }
 
 type SortField = "id_no" | "site_name" | "order_value" | "extra_work_value" | "balance" | "reminder_date"
 type SortDirection = "asc" | "desc"
 
-export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
+export function ProjectsTable({ projects, onRefresh, isPurchase = false }: ProjectsTableProps) {
   const [sortField, setSortField] = useState<SortField>(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("projects_sort_field") as SortField
@@ -112,27 +113,34 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
   const handleBulkDelete = async () => {
     if (selectedIds.size === 0) return
     setDeleting(true)
-    const toastId = toast.loading(`Deleting ${selectedIds.size} customer(s)...`)
+    const entityLabel = isPurchase ? "vendor(s)" : "customer(s)"
+    const toastId = toast.loading(`Deleting ${selectedIds.size} ${entityLabel}...`)
     try {
       const supabase = createClient()
       for (const id of Array.from(selectedIds)) {
-        // Delete all related records first
-        await supabase.from("ledger_entries").delete().eq("project_id", id)
-        await supabase.from("payment_terms").delete().eq("project_id", id)
-        await supabase.from("expenses").delete().eq("project_id", id)
-        await supabase.from("calling_records").delete().eq("project_id", id)
-        await supabase.from("swh_checklist").delete().eq("project_id", id)
-        await supabase.from("work_remarks").delete().eq("project_id", id)
-        await supabase.from("projects").delete().eq("id", id)
+        if (isPurchase) {
+          await supabase.from("purchase_ledger_entries").delete().eq("purchase_id", id)
+          await supabase.from("purchase_calling_records").delete().eq("purchase_id", id)
+          await supabase.from("purchases").delete().eq("id", id)
+        } else {
+          // Delete all related records first
+          await supabase.from("ledger_entries").delete().eq("project_id", id)
+          await supabase.from("payment_terms").delete().eq("project_id", id)
+          await supabase.from("expenses").delete().eq("project_id", id)
+          await supabase.from("calling_records").delete().eq("project_id", id)
+          await supabase.from("swh_checklist").delete().eq("project_id", id)
+          await supabase.from("work_remarks").delete().eq("project_id", id)
+          await supabase.from("projects").delete().eq("id", id)
+        }
       }
-      const successMsg = `${selectedIds.size} customer(s) deleted successfully`
+      const successMsg = `${selectedIds.size} ${entityLabel} deleted successfully`
       toast.success(successMsg, { id: toastId })
       setTimeout(() => alert(successMsg), 100)
       setSelectedIds(new Set())
       setDeleteConfirmOpen(false)
       if (onRefresh) onRefresh()
     } catch (err: any) {
-      toast.error(err.message || "Failed to delete customers", { id: toastId })
+      toast.error(err.message || `Failed to delete ${entityLabel}`, { id: toastId })
     } finally {
       setDeleting(false)
     }
@@ -241,7 +249,8 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
     }
 
     const columnsConfig = getPdfColumnsConfig()
-    await generateDirectoryPDF(sortedProjects, "CUSTOMER DIRECTORY & SUMMARY REPORT", callRemarkMap, workRemarkMap, columnsConfig, callDateMap)
+    const pdfTitle = isPurchase ? "VENDOR DIRECTORY & SUMMARY REPORT" : "CUSTOMER DIRECTORY & SUMMARY REPORT"
+    await generateDirectoryPDF(sortedProjects, pdfTitle, callRemarkMap, workRemarkMap, columnsConfig, callDateMap, isPurchase)
   }
 
   const handleExportExcel = async () => {
@@ -253,30 +262,42 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
     let workRemarkMap: Record<string, string> = {}
     try {
       const supabase = createClient()
-      const [callRes, workRes] = await Promise.all([
-        supabase.from("calling_records").select("*").order("date", { ascending: false }),
-        supabase.from("work_remarks").select("*").order("date", { ascending: false })
-      ])
+      const callsTable = isPurchase ? "purchase_calling_records" : "calling_records"
+      const worksTable = "work_remarks"
 
-      callRes.data?.forEach((rec: CallingRecord) => {
-        if (!rec.project_id) return
-        if (!callDateMap[rec.project_id] && rec.date) {
-          callDateMap[rec.project_id] = rec.date
-        } else if (rec.date && callDateMap[rec.project_id]) {
-          if (new Date(rec.date).getTime() > new Date(callDateMap[rec.project_id]).getTime()) {
-            callDateMap[rec.project_id] = rec.date
+      const queries: Promise<any>[] = [
+        supabase.from(callsTable).select("*").order("date", { ascending: false })
+      ]
+      if (!isPurchase) {
+        queries.push(supabase.from(worksTable).select("*").order("date", { ascending: false }))
+      }
+
+      const results = await Promise.all(queries)
+      const callRes = results[0]
+      const workRes = results[1]
+
+      callRes.data?.forEach((rec: any) => {
+        const pId = rec.purchase_id || rec.project_id
+        if (!pId) return
+        if (!callDateMap[pId] && rec.date) {
+          callDateMap[pId] = rec.date
+        } else if (rec.date && callDateMap[pId]) {
+          if (new Date(rec.date).getTime() > new Date(callDateMap[pId]).getTime()) {
+            callDateMap[pId] = rec.date
           }
         }
-        if (!callRemarkMap[rec.project_id] && rec.description) {
-          callRemarkMap[rec.project_id] = rec.description
+        if (!callRemarkMap[pId] && rec.description) {
+          callRemarkMap[pId] = rec.description
         }
       })
 
-      workRes.data?.forEach((rec: any) => {
-        if (!workRemarkMap[rec.project_id] && rec.remark) {
-          workRemarkMap[rec.project_id] = rec.remark
-        }
-      })
+      if (!isPurchase && workRes?.data) {
+        workRes.data.forEach((rec: any) => {
+          if (!workRemarkMap[rec.project_id] && rec.remark) {
+            workRemarkMap[rec.project_id] = rec.remark
+          }
+        })
+      }
     } catch (e) {
       console.warn("Could not fetch remarks for excel export:", e)
     }
@@ -287,6 +308,26 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
         : formatDate(p.updated_at || p.created_at)
 
       const reminderDateVal = p.reminder_date || callDateMap[p.id]
+
+      if (isPurchase) {
+        return {
+          "S No.": idx + 1,
+          "Vendor Creation Date": formatDate(p.created_at),
+          "Account Clearance Date": clearanceDate,
+          "Vendor ID": p.id_no,
+          "Item Group": p.order_type,
+          "Vendor Name": p.site_name,
+          "Firm Name": p.firm_name || "-",
+          "Party Print Name": p.party_print_name || "-",
+          "Mobile Number": p.mobile_number || "-",
+          "Vendor Address": p.address,
+          "Quotation Value (Rs)": p.quotation_value ?? p.order_value,
+          "Payment Paid (Rs)": p.payment_paid ?? p.payment_received,
+          "Outstanding Balance (Rs)": p.balance,
+          "Reminder Date": reminderDateVal ? formatDate(reminderDateVal) : "-",
+          "Last Call Remark": callRemarkMap[p.id] || (p as any).last_call_remark || "",
+        }
+      }
 
       return {
         "S No.": idx + 1,
@@ -314,9 +355,11 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
 
     const worksheet = XLSX.utils.json_to_sheet(exportData)
     const workbook = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Customers")
+    const sheetName = isPurchase ? "Vendors" : "Customers"
+    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName)
     const cleanCompName = compName.replace(/[^a-zA-Z0-9]/g, "_")
-    XLSX.writeFile(workbook, `${cleanCompName}_Customer_Directory_${new Date().toISOString().slice(0, 10)}.xlsx`)
+    const fileSuffix = isPurchase ? "Vendor_Directory" : "Customer_Directory"
+    XLSX.writeFile(workbook, `${cleanCompName}_${fileSuffix}_${new Date().toISOString().slice(0, 10)}.xlsx`)
   }
 
   return (
@@ -347,8 +390,8 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
         <CardHeader className="pb-4 bg-muted/30 border-b">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <CardTitle className="text-xl font-bold tracking-tight">Project Directory</CardTitle>
-              <p className="text-sm text-muted-foreground mt-0.5">Manage and track all installation sites</p>
+              <CardTitle className="text-xl font-bold tracking-tight">{isPurchase ? "Vendor Directory" : "Project Directory"}</CardTitle>
+              <p className="text-sm text-muted-foreground mt-0.5">{isPurchase ? "Manage and track all vendor purchase accounts" : "Manage and track all installation sites"}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 px-3 py-1.5 font-bold text-xs mr-1">
@@ -438,31 +481,37 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
                       />
                     </TableHead>
                   )}
-                  <TableHead className={`whitespace-nowrap font-bold text-xs uppercase tracking-wider text-muted-foreground ${!canEdit ? 'pl-6 rounded-tl-xl' : ''}`}>ID</TableHead>
+                  <TableHead className={`whitespace-nowrap font-bold text-xs uppercase tracking-wider text-muted-foreground ${!canEdit ? 'pl-6 rounded-tl-xl' : ''}`}>
+                    {isPurchase ? "Vendor ID" : "ID"}
+                  </TableHead>
                   <TableHead className="font-bold text-foreground uppercase text-[10px] tracking-widest py-4">Type</TableHead>
                   <TableHead
                     className="cursor-pointer font-bold text-foreground uppercase text-[10px] tracking-widest py-4"
                     onClick={() => handleSort("site_name")}
                   >
-                    Customer / Site Name <SortIcon field="site_name" />
+                    {isPurchase ? "Vendor Name" : "Customer / Site Name"} <SortIcon field="site_name" />
                   </TableHead>
                   <TableHead className="w-[140px] font-bold text-foreground uppercase text-[10px] tracking-widest py-4">Party Print Name</TableHead>
                   <TableHead className="font-bold text-foreground uppercase text-[10px] tracking-widest py-4 whitespace-nowrap">Mobile No.</TableHead>
-                  <TableHead className="font-bold text-foreground uppercase text-[10px] tracking-widest py-4">Address</TableHead>
+                  <TableHead className="font-bold text-foreground uppercase text-[10px] tracking-widest py-4">
+                    {isPurchase ? "Vendor Address" : "Address"}
+                  </TableHead>
                   <TableHead
                     className="text-right cursor-pointer font-bold text-foreground bg-info/5 uppercase text-[10px] tracking-widest py-4 whitespace-nowrap"
                     onClick={() => handleSort("order_value")}
                   >
-                    Order Value <SortIcon field="order_value" />
+                    {isPurchase ? "Quotation Value" : "Order Value"} <SortIcon field="order_value" />
                   </TableHead>
-                  <TableHead
-                    className="text-right cursor-pointer font-bold text-foreground bg-warning/5 uppercase text-[10px] tracking-widest py-4 whitespace-nowrap"
-                    onClick={() => handleSort("extra_work_value")}
-                  >
-                    Extra Work <SortIcon field="extra_work_value" />
-                  </TableHead>
+                  {!isPurchase && (
+                    <TableHead
+                      className="text-right cursor-pointer font-bold text-foreground bg-warning/5 uppercase text-[10px] tracking-widest py-4 whitespace-nowrap"
+                      onClick={() => handleSort("extra_work_value")}
+                    >
+                      Extra Work <SortIcon field="extra_work_value" />
+                    </TableHead>
+                  )}
                   <TableHead className="text-right font-bold text-foreground bg-success/5 uppercase text-[10px] tracking-widest py-4 whitespace-nowrap">
-                    Payment Recd
+                    {isPurchase ? "Payment Paid" : "Payment Recd"}
                   </TableHead>
                   <TableHead
                     className="text-right cursor-pointer font-bold text-foreground uppercase text-[10px] tracking-widest py-4 whitespace-nowrap"
@@ -518,13 +567,15 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
                         {project.address}
                       </TableCell>
                       <TableCell className="text-right bg-info/5 font-mono text-xs whitespace-nowrap">
-                        {formatCurrency(project.order_value)}
+                        {formatCurrency(isPurchase ? (project.quotation_value ?? project.order_value) : project.order_value)}
                       </TableCell>
-                      <TableCell className="text-right bg-warning/5 font-mono text-xs font-semibold whitespace-nowrap">
-                        {formatCurrency(project.extra_work_value || 0)}
-                      </TableCell>
+                      {!isPurchase && (
+                        <TableCell className="text-right bg-warning/5 font-mono text-xs font-semibold whitespace-nowrap">
+                          {formatCurrency(project.extra_work_value || 0)}
+                        </TableCell>
+                      )}
                       <TableCell className="text-right bg-success/5 font-mono text-xs text-success font-semibold whitespace-nowrap">
-                        {formatCurrency(project.payment_received)}
+                        {formatCurrency(isPurchase ? (project.payment_paid ?? project.payment_received) : project.payment_received)}
                       </TableCell>
                       <TableCell className={`text-right font-mono text-xs font-bold whitespace-nowrap ${project.balance > 0 ? "text-success" : project.balance < 0 ? "text-destructive" : ""
                         }`}>
@@ -544,7 +595,7 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
                         )}
                       </TableCell>
                       <TableCell className="text-center">
-                        <Link href={`/projects/${project.id}`}>
+                        <Link href={`/projects/${project.id}${isPurchase ? '?mode=purchase' : ''}`}>
                           <Button variant="ghost" size="sm" className="text-primary hover:text-primary hover:bg-primary/10 rounded-full font-bold text-xs">
                             <ExternalLink className="h-3 w-3 mr-1.5" />
                             Ledger
@@ -556,8 +607,8 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
                 </AnimatePresence>
                 {sortedProjects.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={canEdit ? 13 : 12} className="text-center py-20 text-muted-foreground italic">
-                      No projects match your search criteria.
+                    <TableCell colSpan={canEdit ? (isPurchase ? 12 : 13) : (isPurchase ? 11 : 12)} className="text-center py-20 text-muted-foreground italic">
+                      No records match your search criteria.
                     </TableCell>
                   </TableRow>
                 )}
@@ -602,40 +653,59 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
                         </div>
                       )}
                     </div>
-                    <Link href={`/projects/${project.id}`}>
+                    <Link href={`/projects/${project.id}${isPurchase ? '?mode=purchase' : ''}`}>
                       <Button variant="outline" size="icon" className="h-10 w-10 rounded-full border-primary/20 text-primary hover:bg-primary/10 shadow-sm">
                         <ExternalLink className="h-4 w-4" />
                       </Button>
                     </Link>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-info/10 rounded-xl p-3 border border-info/20">
-                      <p className="text-info-foreground/70 text-[9px] font-bold uppercase tracking-widest mb-1">Contract</p>
-                      <p className="font-bold text-sm">{formatCurrency(project.order_value)}</p>
+                  {isPurchase ? (
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="bg-info/10 rounded-xl p-3 border border-info/20">
+                        <p className="text-info-foreground/70 text-[9px] font-bold uppercase tracking-widest mb-1">Quotation</p>
+                        <p className="font-bold text-xs">{formatCurrency(project.quotation_value ?? project.order_value)}</p>
+                      </div>
+                      <div className="bg-success/10 rounded-xl p-3 border border-success/20">
+                        <p className="text-success-foreground/70 text-[9px] font-bold uppercase tracking-widest mb-1">Paid</p>
+                        <p className="font-bold text-xs text-success">{formatCurrency(project.payment_paid ?? project.payment_received)}</p>
+                      </div>
+                      <div className={`rounded-xl p-3 border shadow-inner ${project.balance > 0 ? "bg-success/5 border-success/20" : "bg-destructive/5 border-destructive/20"}`}>
+                        <p className="text-muted-foreground text-[9px] font-bold uppercase tracking-widest mb-1">Balance</p>
+                        <p className={`font-bold text-xs ${project.balance > 0 ? "text-success" : "text-destructive"}`}>
+                          {formatCurrency(project.balance)}
+                        </p>
+                      </div>
                     </div>
-                    <div className="bg-warning/10 rounded-xl p-3 border border-warning/20">
-                      <p className="text-warning-foreground/70 text-[9px] font-bold uppercase tracking-widest mb-1">Extra Work</p>
-                      <p className="font-bold text-sm text-warning-foreground">{formatCurrency(project.extra_work_value || 0)}</p>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-info/10 rounded-xl p-3 border border-info/20">
+                        <p className="text-info-foreground/70 text-[9px] font-bold uppercase tracking-widest mb-1">Contract</p>
+                        <p className="font-bold text-sm">{formatCurrency(project.order_value)}</p>
+                      </div>
+                      <div className="bg-warning/10 rounded-xl p-3 border border-warning/20">
+                        <p className="text-warning-foreground/70 text-[9px] font-bold uppercase tracking-widest mb-1">Extra Work</p>
+                        <p className="font-bold text-sm text-warning-foreground">{formatCurrency(project.extra_work_value || 0)}</p>
+                      </div>
+                      <div className="bg-success/10 rounded-xl p-3 border border-success/20">
+                        <p className="text-success-foreground/70 text-[9px] font-bold uppercase tracking-widest mb-1">Collection</p>
+                        <p className="font-bold text-sm text-success">{formatCurrency(project.payment_received)}</p>
+                      </div>
+                      <div className={`rounded-xl p-3 border shadow-inner ${project.balance > 0 ? "bg-success/5 border-success/20" : "bg-destructive/5 border-destructive/20"
+                        }`}>
+                        <p className="text-muted-foreground text-[9px] font-bold uppercase tracking-widest mb-1">Outstanding</p>
+                        <p className={`font-bold text-sm ${project.balance > 0 ? "text-success" : "text-destructive"}`}>
+                          {formatCurrency(project.balance)}
+                        </p>
+                      </div>
                     </div>
-                    <div className="bg-success/10 rounded-xl p-3 border border-success/20">
-                      <p className="text-success-foreground/70 text-[9px] font-bold uppercase tracking-widest mb-1">Collection</p>
-                      <p className="font-bold text-sm text-success">{formatCurrency(project.payment_received)}</p>
-                    </div>
-                    <div className={`rounded-xl p-3 border shadow-inner ${project.balance > 0 ? "bg-success/5 border-success/20" : "bg-destructive/5 border-destructive/20"
-                      }`}>
-                      <p className="text-muted-foreground text-[9px] font-bold uppercase tracking-widest mb-1">Outstanding</p>
-                      <p className={`font-bold text-sm ${project.balance > 0 ? "text-success" : "text-destructive"}`}>
-                        {formatCurrency(project.balance)}
-                      </p>
-                    </div>
-                  </div>
+                  )}
                 </motion.div>
               ))}
             </AnimatePresence>
             {sortedProjects.length === 0 && (
               <div className="p-16 text-center text-muted-foreground italic text-sm">
-                No projects found.
+                No records found.
               </div>
             )}
           </div>
@@ -646,11 +716,13 @@ export function ProjectsTable({ projects, onRefresh }: ProjectsTableProps) {
         open={importDialogOpen}
         onOpenChange={setImportDialogOpen}
         onSuccess={() => onRefresh && onRefresh()}
+        isPurchase={isPurchase}
       />
       <UpdateExcelDialog
         open={updateDialogOpen}
         onOpenChange={setUpdateDialogOpen}
         onSuccess={() => onRefresh && onRefresh()}
+        isPurchase={isPurchase}
       />
     </>
   )

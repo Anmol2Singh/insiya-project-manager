@@ -12,9 +12,10 @@ import { hasEditPermission, isAdmin } from "@/lib/auth-store"
 
 interface ProjectHeaderProps {
   project: Project
+  isPurchase?: boolean
 }
 
-export function ProjectHeader({ project }: ProjectHeaderProps) {
+export function ProjectHeader({ project, isPurchase = false }: ProjectHeaderProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [showMoveCopyDialog, setShowMoveCopyDialog] = useState(false)
   const [canEdit, setCanEdit] = useState(false)
@@ -53,7 +54,7 @@ export function ProjectHeader({ project }: ProjectHeaderProps) {
                 onClick={() => setShowMoveCopyDialog(true)}
               >
                 <CopyPlus className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Move / Copy Customer</span>
+                <span className="hidden sm:inline">{isPurchase ? "Move / Copy Vendor" : "Move / Copy Customer"}</span>
                 <span className="sm:hidden">Move/Copy</span>
               </Button>
             )}
@@ -65,7 +66,7 @@ export function ProjectHeader({ project }: ProjectHeaderProps) {
                 onClick={() => setShowDeleteDialog(true)}
               >
                 <Trash2 className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Delete Project</span>
+                <span className="hidden sm:inline">{isPurchase ? "Delete Vendor" : "Delete Project"}</span>
               </Button>
             )}
           </div>
@@ -77,7 +78,7 @@ export function ProjectHeader({ project }: ProjectHeaderProps) {
               <Badge variant="secondary" className="bg-secondary text-secondary-foreground font-medium">
                 {project.order_type}
               </Badge>
-              {project.salesman_name && (
+              {!isPurchase && project.salesman_name && (
                 <Badge variant="outline" className="bg-primary/10 border-primary/30 text-primary font-semibold">
                   Sales Man: {project.salesman_name}
                 </Badge>
@@ -88,7 +89,8 @@ export function ProjectHeader({ project }: ProjectHeaderProps) {
                 </Badge>
               )}
               <Badge variant="outline" className="bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-400 font-semibold">
-                Customer Since: {project.created_at ? new Date(project.created_at).toLocaleDateString("en-IN") : "N/A"} (ID: {project.id_no})
+                {isPurchase ? "Vendor Since: " : "Customer Since: "}
+                {project.created_at ? new Date(project.created_at).toLocaleDateString("en-IN") : "N/A"} (ID: {project.id_no})
               </Badge>
             </div>
             <h1 className="text-2xl font-bold text-foreground lg:text-3xl tracking-tight break-words">
@@ -96,8 +98,8 @@ export function ProjectHeader({ project }: ProjectHeaderProps) {
             </h1>
             <p className="text-muted-foreground mt-1 max-w-2xl break-words text-sm sm:text-base">{project.address}</p>
 
-            {/* Equipment Info */}
-            {Boolean(project.hp_type || project.hp_qty || project.tank_type || project.tank_qty) && (
+            {/* Equipment Info - Hidden for Purchase */}
+            {!isPurchase && Boolean(project.hp_type || project.hp_qty || project.tank_type || project.tank_qty) && (
               <div className="flex flex-wrap gap-2 mt-4">
                 {project.hp_type && (
                   <Badge variant="outline" className="bg-accent/30 border-accent/50 text-accent-foreground px-2.5 py-0.5 rounded-full text-xs font-semibold">
@@ -126,13 +128,13 @@ export function ProjectHeader({ project }: ProjectHeaderProps) {
           <div className="flex flex-col gap-4 lg:items-end mt-4 lg:mt-0">
             {canEdit && (
               <div className="flex flex-wrap gap-2">
-                <Link href={`/projects/${project.id}/edit`}>
+                <Link href={`/projects/${project.id}/edit${isPurchase ? '?mode=purchase' : ''}`}>
                   <Button variant="outline" size="sm" className="shadow-sm">
                     <Edit className="h-4 w-4 mr-2" />
                     Edit Details
                   </Button>
                 </Link>
-                <Link href={`/projects/${project.id}/call-remark`}>
+                <Link href={`/projects/${project.id}/call-remark${isPurchase ? '?mode=purchase' : ''}`}>
                   <Button size="sm" className="bg-primary text-primary-foreground shadow-sm hover:opacity-90">
                     <Phone className="h-4 w-4 mr-2" />
                     New Call Remark
@@ -142,26 +144,49 @@ export function ProjectHeader({ project }: ProjectHeaderProps) {
             )}
 
             {/* Quick Stats */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6 mt-2 p-4 bg-muted/40 rounded-xl border border-border/50">
-              <div className="text-left lg:text-right">
-                <p className="text-muted-foreground text-[10px] uppercase font-bold tracking-wider mb-1">Order Value</p>
-                <p className="font-bold text-base text-foreground underline decoration-primary/30 decoration-2 underline-offset-4">{formatCurrency(project.order_value)}</p>
+            {isPurchase ? (
+              <div className="grid grid-cols-3 gap-4 sm:gap-6 mt-2 p-4 bg-muted/40 rounded-xl border border-border/50">
+                <div className="text-left lg:text-right">
+                  <p className="text-muted-foreground text-[10px] uppercase font-bold tracking-wider mb-1">Quotation Value</p>
+                  <p className="font-bold text-base text-foreground underline decoration-primary/30 decoration-2 underline-offset-4">
+                    {formatCurrency(project.quotation_value ?? project.order_value)}
+                  </p>
+                </div>
+                <div className="text-left lg:text-right">
+                  <p className="text-muted-foreground text-[10px] uppercase font-bold tracking-wider mb-1">Paid</p>
+                  <p className="font-bold text-base text-success underline decoration-success/30 decoration-2 underline-offset-4">
+                    {formatCurrency(project.payment_paid ?? project.payment_received)}
+                  </p>
+                </div>
+                <div className="text-left lg:text-right">
+                  <p className="text-muted-foreground text-[10px] uppercase font-bold tracking-wider mb-1">Balance</p>
+                  <p className={`font-bold text-base underline decoration-2 underline-offset-4 ${project.balance > 0 ? "text-success decoration-success/30" : "text-destructive decoration-destructive/30"}`}>
+                    {formatCurrency(project.balance)}
+                  </p>
+                </div>
               </div>
-              <div className="text-left lg:text-right">
-                <p className="text-muted-foreground text-[10px] uppercase font-bold tracking-wider mb-1">Extra Work</p>
-                <p className="font-bold text-base text-warning-foreground underline decoration-warning/30 decoration-2 underline-offset-4">{formatCurrency(project.extra_work_value || 0)}</p>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6 mt-2 p-4 bg-muted/40 rounded-xl border border-border/50">
+                <div className="text-left lg:text-right">
+                  <p className="text-muted-foreground text-[10px] uppercase font-bold tracking-wider mb-1">Order Value</p>
+                  <p className="font-bold text-base text-foreground underline decoration-primary/30 decoration-2 underline-offset-4">{formatCurrency(project.order_value)}</p>
+                </div>
+                <div className="text-left lg:text-right">
+                  <p className="text-muted-foreground text-[10px] uppercase font-bold tracking-wider mb-1">Extra Work</p>
+                  <p className="font-bold text-base text-warning-foreground underline decoration-warning/30 decoration-2 underline-offset-4">{formatCurrency(project.extra_work_value || 0)}</p>
+                </div>
+                <div className="text-left lg:text-right">
+                  <p className="text-muted-foreground text-[10px] uppercase font-bold tracking-wider mb-1">Received</p>
+                  <p className="font-bold text-base text-success underline decoration-success/30 decoration-2 underline-offset-4">{formatCurrency(project.payment_received)}</p>
+                </div>
+                <div className="text-left lg:text-right">
+                  <p className="text-muted-foreground text-[10px] uppercase font-bold tracking-wider mb-1">Balance</p>
+                  <p className={`font-bold text-base underline decoration-2 underline-offset-4 ${project.balance > 0 ? "text-success decoration-success/30" : "text-destructive decoration-destructive/30"}`}>
+                    {formatCurrency(project.balance)}
+                  </p>
+                </div>
               </div>
-              <div className="text-left lg:text-right">
-                <p className="text-muted-foreground text-[10px] uppercase font-bold tracking-wider mb-1">Received</p>
-                <p className="font-bold text-base text-success underline decoration-success/30 decoration-2 underline-offset-4">{formatCurrency(project.payment_received)}</p>
-              </div>
-              <div className="text-left lg:text-right">
-                <p className="text-muted-foreground text-[10px] uppercase font-bold tracking-wider mb-1">Balance</p>
-                <p className={`font-bold text-base underline decoration-2 underline-offset-4 ${project.balance > 0 ? "text-success decoration-success/30" : "text-destructive decoration-destructive/30"}`}>
-                  {formatCurrency(project.balance)}
-                </p>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       </div>
@@ -171,12 +196,14 @@ export function ProjectHeader({ project }: ProjectHeaderProps) {
         onOpenChange={setShowDeleteDialog}
         projectId={project.id}
         siteName={project.site_name}
+        isPurchase={isPurchase}
       />
 
       <MoveCopyCustomerDialog
         open={showMoveCopyDialog}
         onOpenChange={setShowMoveCopyDialog}
         project={project}
+        isPurchase={isPurchase}
       />
     </header>
   )

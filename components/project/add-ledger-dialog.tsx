@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { syncProjectTotals } from "@/lib/project-utils"
+import { syncProjectTotals, syncPurchaseTotals } from "@/lib/project-utils"
 import { toast } from "sonner"
 import { Settings2, Plus, Trash2, ChevronUp, ChevronDown, Edit2, Check, X } from "lucide-react"
 import type { LedgerEntry } from "@/lib/types"
@@ -33,10 +33,11 @@ interface AddLedgerDialogProps {
   projectId: string
   nextSrNo: number
   onSuccess: () => void
-  entry?: LedgerEntry | null
+  entry?: LedgerEntry | any | null
+  isPurchase?: boolean
 }
 
-export function AddLedgerDialog({ open, onOpenChange, projectId, nextSrNo, onSuccess, entry }: AddLedgerDialogProps) {
+export function AddLedgerDialog({ open, onOpenChange, projectId, nextSrNo, onSuccess, entry, isPurchase = false }: AddLedgerDialogProps) {
   const [loading, setLoading] = useState(false)
   const isEdit = !!entry
 
@@ -182,13 +183,13 @@ export function AddLedgerDialog({ open, onOpenChange, projectId, nextSrNo, onSuc
         reference_number: entry.reference_number || "",
         invoice_no: entry.invoice_no || "",
         particulars: entry.particulars || (particularsOptions[0] || "Bill"),
-        bill_submitted: entry.bill_submitted || false,
-        payment_receipt: entry.payment_receipt || false,
+        bill_submitted: entry.bill_received !== undefined ? entry.bill_received : (entry.bill_submitted || false),
+        payment_receipt: entry.payment_bill !== undefined ? entry.payment_bill : (entry.payment_receipt || false),
         sales_m_value: entry.sales_m_value || "",
         m_outward_value: entry.m_outward_value || "",
-        order_value: entry.order_value || "",
+        order_value: entry.quotation_value !== undefined && entry.quotation_value !== null ? entry.quotation_value : (entry.order_value || ""),
         extra_work_value: entry.extra_work_value || "",
-        payment_received: entry.payment_received || "",
+        payment_received: entry.payment_paid !== undefined && entry.payment_paid !== null ? entry.payment_paid : (entry.payment_received || ""),
       })
     } else {
       setFormData({
@@ -214,6 +215,51 @@ export function AddLedgerDialog({ open, onOpenChange, projectId, nextSrNo, onSuc
 
     try {
       const supabase = createClient()
+
+      if (isPurchase) {
+        const purchasePayload = {
+          date: formData.date,
+          payment_type: formData.payment_type || null,
+          reference_number: formData.reference_number || null,
+          invoice_no: formData.invoice_no || null,
+          particulars: formData.particulars,
+          bill_received: formData.bill_submitted,
+          bill_submitted: formData.bill_submitted,
+          payment_bill: formData.payment_receipt,
+          payment_receipt: formData.payment_receipt,
+          quotation_value: formData.order_value ? parseFloat(formData.order_value) : 0,
+          order_value: formData.order_value ? parseFloat(formData.order_value) : 0,
+          payment_paid: formData.payment_received ? parseFloat(formData.payment_received) : 0,
+          payment_received: formData.payment_received ? parseFloat(formData.payment_received) : 0,
+        }
+
+        if (isEdit && entry) {
+          const { error } = await supabase
+            .from("purchase_ledger_entries")
+            .update(purchasePayload)
+            .eq("id", entry.id)
+
+          if (error) throw error
+          toast.success("Purchase entry updated successfully")
+        } else {
+          const { error } = await supabase
+            .from("purchase_ledger_entries")
+            .insert({
+              ...purchasePayload,
+              purchase_id: projectId,
+              project_id: projectId,
+              sr_no: nextSrNo,
+            })
+
+          if (error) throw error
+          toast.success("Purchase entry added successfully")
+        }
+
+        await syncPurchaseTotals(projectId)
+        onSuccess()
+        onOpenChange(false)
+        return
+      }
 
       const payload = {
         date: formData.date,
@@ -276,7 +322,15 @@ export function AddLedgerDialog({ open, onOpenChange, projectId, nextSrNo, onSuc
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{isEdit ? "Edit Ledger Entry" : "Add Ledger Entry"}</DialogTitle>
+            <DialogTitle>
+              {isEdit
+                ? isPurchase
+                  ? "Edit Purchase Entry"
+                  : "Edit Ledger Entry"
+                : isPurchase
+                ? "Add Purchase Entry"
+                : "Add Ledger Entry"}
+            </DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
@@ -387,7 +441,9 @@ export function AddLedgerDialog({ open, onOpenChange, projectId, nextSrNo, onSuc
                     })
                   }
                 />
-                <Label htmlFor="bill_submitted" className="text-sm cursor-pointer">Bill Submitted</Label>
+                <Label htmlFor="bill_submitted" className="text-sm cursor-pointer">
+                  {isPurchase ? "Bill Received" : "Bill Submitted"}
+                </Label>
               </div>
               <div className="flex items-center gap-2">
                 <Checkbox
@@ -401,43 +457,47 @@ export function AddLedgerDialog({ open, onOpenChange, projectId, nextSrNo, onSuc
                     })
                   }
                 />
-                <Label htmlFor="payment_receipt" className="text-sm cursor-pointer">Payment Receipt</Label>
+                <Label htmlFor="payment_receipt" className="text-sm cursor-pointer">
+                  {isPurchase ? "Payment Bill" : "Payment Receipt"}
+                </Label>
               </div>
             </div>
 
-            <div className="border-t pt-4">
-              <h4 className="font-medium mb-3 text-warning-foreground">Material Section</h4>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="sales_m_value">Sales M Value</Label>
-                  <Input
-                    id="sales_m_value"
-                    type="number"
-                    step="0.01"
-                    placeholder=""
-                    value={formData.sales_m_value === 0 || formData.sales_m_value === "0" ? "" : formData.sales_m_value}
-                    onChange={(e) => setFormData({ ...formData, sales_m_value: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="m_outward_value">M Outward Value</Label>
-                  <Input
-                    id="m_outward_value"
-                    type="number"
-                    step="0.01"
-                    placeholder=""
-                    value={formData.m_outward_value === 0 || formData.m_outward_value === "0" ? "" : formData.m_outward_value}
-                    onChange={(e) => setFormData({ ...formData, m_outward_value: e.target.value })}
-                  />
+            {!isPurchase && (
+              <div className="border-t pt-4">
+                <h4 className="font-medium mb-3 text-warning-foreground">Material Section</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="sales_m_value">Sales M Value</Label>
+                    <Input
+                      id="sales_m_value"
+                      type="number"
+                      step="0.01"
+                      placeholder=""
+                      value={formData.sales_m_value === 0 || formData.sales_m_value === "0" ? "" : formData.sales_m_value}
+                      onChange={(e) => setFormData({ ...formData, sales_m_value: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="m_outward_value">M Outward Value</Label>
+                    <Input
+                      id="m_outward_value"
+                      type="number"
+                      step="0.01"
+                      placeholder=""
+                      value={formData.m_outward_value === 0 || formData.m_outward_value === "0" ? "" : formData.m_outward_value}
+                      onChange={(e) => setFormData({ ...formData, m_outward_value: e.target.value })}
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             <div className="border-t pt-4">
               <h4 className="font-medium mb-3 text-info">Account Section</h4>
-              <div className="grid grid-cols-3 gap-4">
+              <div className={`grid ${isPurchase ? "grid-cols-2" : "grid-cols-3"} gap-4`}>
                 <div>
-                  <Label htmlFor="order_value">Order Value</Label>
+                  <Label htmlFor="order_value">{isPurchase ? "Quotation Value" : "Order Value"}</Label>
                   <Input
                     id="order_value"
                     type="number"
@@ -447,19 +507,21 @@ export function AddLedgerDialog({ open, onOpenChange, projectId, nextSrNo, onSuc
                     onChange={(e) => setFormData({ ...formData, order_value: e.target.value })}
                   />
                 </div>
+                {!isPurchase && (
+                  <div>
+                    <Label htmlFor="extra_work_value">Extra Work Value</Label>
+                    <Input
+                      id="extra_work_value"
+                      type="number"
+                      step="0.01"
+                      placeholder=""
+                      value={formData.extra_work_value === 0 || formData.extra_work_value === "0" ? "" : formData.extra_work_value}
+                      onChange={(e) => setFormData({ ...formData, extra_work_value: e.target.value })}
+                    />
+                  </div>
+                )}
                 <div>
-                  <Label htmlFor="extra_work_value">Extra Work Value</Label>
-                  <Input
-                    id="extra_work_value"
-                    type="number"
-                    step="0.01"
-                    placeholder=""
-                    value={formData.extra_work_value === 0 || formData.extra_work_value === "0" ? "" : formData.extra_work_value}
-                    onChange={(e) => setFormData({ ...formData, extra_work_value: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="payment_received">Payment Received</Label>
+                  <Label htmlFor="payment_received">{isPurchase ? "Payment Paid" : "Payment Received"}</Label>
                   <Input
                     id="payment_received"
                     type="number"

@@ -1,10 +1,9 @@
-"use client"
-
 import React, { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { getActiveCompany } from "@/lib/company-store"
 import { hasEditPermission } from "@/lib/auth-store"
+import { useRecordMode } from "@/lib/record-mode-store"
 import {
   getDropdownCategories,
   saveDropdownCategories,
@@ -39,14 +38,17 @@ import type { Project } from "@/lib/types"
 import { toast } from "sonner"
 import { LayoutGrid, Save, Plus, Trash2, Settings2, ChevronUp, ChevronDown, Edit2, Check, X } from "lucide-react"
 
-
 interface ProjectFormProps {
   project?: Project
   mode: "create" | "edit"
+  isPurchase?: boolean
 }
 
-export function ProjectForm({ project, mode }: ProjectFormProps) {
+export function ProjectForm({ project, mode, isPurchase }: ProjectFormProps) {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const globalMode = useRecordMode()
+  const isPurchaseMode = isPurchase ?? (searchParams?.get("mode") === "purchase" || globalMode === "purchase")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -297,6 +299,53 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
       const supabase = createClient()
 
       const activeCompany = getActiveCompany()
+      if (isPurchaseMode) {
+        const qVal = parseFloat(formData.order_value) || 0
+        const pPaid = (project as any)?.payment_paid || (project as any)?.payment_received || 0
+        const purchaseData = {
+          id_no: parseInt(formData.id_no) || 0,
+          order_type: formData.order_type,
+          firm_name: formData.firm_name || null,
+          site_name: formData.site_name,
+          party_print_name: finalPartyPrintName || null,
+          mobile_number: formData.mobile_number || null,
+          address: formData.address,
+          quotation_value: qVal,
+          order_value: qVal,
+          payment_paid: pPaid,
+          payment_received: pPaid,
+          balance: qVal - pPaid,
+          work_remark: formData.work_remark || null,
+          company_id: activeCompany.id,
+          created_at: new Date(formData.created_at).toISOString(),
+        }
+
+        if (mode === "create") {
+          const { data, error: insertError } = await supabase
+            .from("purchases")
+            .insert(purchaseData)
+            .select()
+            .single()
+
+          if (insertError) throw insertError
+          toast.success("Vendor created successfully")
+          router.push(`/projects/${data.id}?mode=purchase`)
+        } else if (project) {
+          const { error: updateError } = await supabase
+            .from("purchases")
+            .update({
+              ...purchaseData,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", project.id)
+
+          if (updateError) throw updateError
+          toast.success("Vendor updated successfully")
+          router.push(`/projects/${project.id}?mode=purchase`)
+        }
+        return
+      }
+
       const projectData = {
         id_no: parseInt(formData.id_no) || 0,
         order_type: formData.order_type,
@@ -340,9 +389,9 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
         router.push(`/projects/${project.id}`)
       }
     } catch (err: any) {
-      console.error("Error saving project:", err)
-      setError(err.message || "Failed to save project. Please try again.")
-      toast.error("Failed to save project")
+      console.error("Error saving record:", err)
+      setError(err.message || "Failed to save record. Please try again.")
+      toast.error("Failed to save record")
     } finally {
       setLoading(false)
     }
@@ -364,7 +413,9 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
           <div className="p-1.5 bg-primary/10 rounded-lg">
             <LayoutGrid className="h-5 w-5 text-primary" />
           </div>
-          {mode === "create" ? "Project Specifications" : "Rename/Update Project"}
+          {mode === "create" 
+            ? (isPurchaseMode ? "Vendor Specifications" : "Project Specifications") 
+            : (isPurchaseMode ? "Rename/Update Vendor" : "Rename/Update Project")}
         </CardTitle>
       </CardHeader>
       <CardContent className="p-8">
@@ -380,18 +431,22 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
           <section className="space-y-6">
             <div className="flex items-center gap-3">
               <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center font-bold text-xs text-muted-foreground border border-border/50">1</div>
-              <h3 className="font-bold text-foreground uppercase text-xs tracking-widest">Site Information</h3>
+              <h3 className="font-bold text-foreground uppercase text-xs tracking-widest">
+                {isPurchaseMode ? "Vendor Information" : "Site Information"}
+              </h3>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-2">
-                <Label htmlFor="id_no" className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">Project ID</Label>
+                <Label htmlFor="id_no" className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">
+                  {isPurchaseMode ? "Vendor ID" : "Project ID"}
+                </Label>
                 <Input
                   id="id_no"
                   type="number"
                   value={formData.id_no}
                   onChange={(e) => setFormData({ ...formData, id_no: e.target.value })}
-                  placeholder="Enter Project ID"
+                  placeholder={isPurchaseMode ? "Enter Vendor ID" : "Enter Project ID"}
                   className="rounded-xl h-12 bg-muted/30 border-border/50 focus:bg-background transition-all"
                   required
                   disabled={!canEdit}
@@ -487,44 +542,46 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
                 </Select>
               </div>
 
-              {/* Salesman Name Field */}
-              <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <Label htmlFor="salesman_name" className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">
-                    Sales Man Name
-                  </Label>
-                  {canEdit && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setManageSalesmanOpen(true)
-                        setEditingSalesmanIdx(null)
-                        setNewSalesmanName("")
-                      }}
-                      className="text-xs text-primary hover:underline font-semibold flex items-center gap-1"
-                    >
-                      <Settings2 className="h-3 w-3" /> Edit Dropdown List
-                    </button>
-                  )}
-                </div>
+              {/* Salesman Name Field - Hidden for Purchase */}
+              {!isPurchaseMode && (
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <Label htmlFor="salesman_name" className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">
+                      Sales Man Name
+                    </Label>
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setManageSalesmanOpen(true)
+                          setEditingSalesmanIdx(null)
+                          setNewSalesmanName("")
+                        }}
+                        className="text-xs text-primary hover:underline font-semibold flex items-center gap-1"
+                      >
+                        <Settings2 className="h-3 w-3" /> Edit Dropdown List
+                      </button>
+                    )}
+                  </div>
 
-                <Select
-                  value={formData.salesman_name}
-                  onValueChange={(value) => setFormData({ ...formData, salesman_name: value })}
-                  disabled={!canEdit}
-                >
-                  <SelectTrigger className="rounded-xl h-12 bg-muted/30 border-border/50 focus:bg-background transition-all">
-                    <SelectValue placeholder="Select Sales Man" />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-xl border-border/50 shadow-xl">
-                    {displaySalesmanOptions.filter(Boolean).map((name, idx) => (
-                      <SelectItem key={`salesman-${idx}-${name}`} value={name} className="rounded-lg">
-                        {name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                  <Select
+                    value={formData.salesman_name}
+                    onValueChange={(value) => setFormData({ ...formData, salesman_name: value })}
+                    disabled={!canEdit}
+                  >
+                    <SelectTrigger className="rounded-xl h-12 bg-muted/30 border-border/50 focus:bg-background transition-all">
+                      <SelectValue placeholder="Select Sales Man" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl border-border/50 shadow-xl">
+                      {displaySalesmanOptions.filter(Boolean).map((name, idx) => (
+                        <SelectItem key={`salesman-${idx}-${name}`} value={name} className="rounded-lg">
+                          {name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
               {/* Firm Name Field */}
               <div className="space-y-2">
@@ -568,12 +625,14 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
-                <Label htmlFor="site_name" className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">Official Site Name / Customer</Label>
+                <Label htmlFor="site_name" className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">
+                  {isPurchaseMode ? "Vendor Name" : "Official Site Name / Customer"}
+                </Label>
                 <Input
                   id="site_name"
                   value={formData.site_name}
                   onChange={(e) => setFormData({ ...formData, site_name: e.target.value })}
-                  placeholder="Enter Official Site Name"
+                  placeholder={isPurchaseMode ? "Enter Vendor Name" : "Enter Official Site Name"}
                   className="rounded-xl h-12 bg-muted/30 border-border/50 focus:bg-background transition-all"
                   required
                   disabled={!canEdit}
@@ -606,12 +665,14 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="address" className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">Installation Address</Label>
+              <Label htmlFor="address" className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">
+                {isPurchaseMode ? "Vendor Address" : "Installation Address"}
+              </Label>
               <Textarea
                 id="address"
                 value={formData.address}
                 onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                placeholder="Enter Installation Address"
+                placeholder={isPurchaseMode ? "Enter Vendor Address" : "Enter Installation Address"}
                 className="rounded-xl bg-muted/30 border-border/50 focus:bg-background transition-all min-h-[100px] resize-none"
                 required
                 disabled={!canEdit}
@@ -619,81 +680,87 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
             </div>
           </section>
 
-          {/* Equipment Details */}
-          <section className="space-y-6">
-            <div className="flex items-center gap-3">
-              <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center font-bold text-xs text-muted-foreground border border-border/50">2</div>
-              <h3 className="font-bold text-foreground uppercase text-xs tracking-widest">Technical Specifications</h3>
-            </div>
-
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 p-6 bg-muted/20 rounded-3xl border border-dashed border-border/50">
-              <div className="space-y-2">
-                <Label htmlFor="hp_type" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground ml-1">Item Name</Label>
-                <Input
-                  id="hp_type"
-                  value={formData.hp_type}
-                  onChange={(e) => setFormData({ ...formData, hp_type: e.target.value })}
-                  placeholder="Enter Item Name"
-                  className="rounded-xl bg-background border-border/30 h-11"
-                  disabled={!canEdit}
-                />
+          {/* Equipment Details - Hidden for Purchase */}
+          {!isPurchaseMode && (
+            <section className="space-y-6">
+              <div className="flex items-center gap-3">
+                <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center font-bold text-xs text-muted-foreground border border-border/50">2</div>
+                <h3 className="font-bold text-foreground uppercase text-xs tracking-widest">Technical Specifications</h3>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="hp_qty" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground ml-1">Item Qty</Label>
-                <Input
-                  id="hp_qty"
-                  type="number"
-                  value={formData.hp_qty}
-                  onChange={(e) => setFormData({ ...formData, hp_qty: e.target.value })}
-                  placeholder="Enter Item Qty"
-                  className="rounded-xl bg-background border-border/30 h-11"
-                  disabled={!canEdit}
-                />
-              </div>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 p-6 bg-muted/20 rounded-3xl border border-dashed border-border/50">
+                <div className="space-y-2">
+                  <Label htmlFor="hp_type" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground ml-1">Item Name</Label>
+                  <Input
+                    id="hp_type"
+                    value={formData.hp_type}
+                    onChange={(e) => setFormData({ ...formData, hp_type: e.target.value })}
+                    placeholder="Enter Item Name"
+                    className="rounded-xl bg-background border-border/30 h-11"
+                    disabled={!canEdit}
+                  />
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="tank_type" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground ml-1">Tank Type</Label>
-                <Input
-                  id="tank_type"
-                  type="text"
-                  placeholder="Enter tank type"
-                  value={formData.tank_type}
-                  onChange={(e) => setFormData({ ...formData, tank_type: e.target.value })}
-                  className="rounded-xl bg-background border-border/30 h-11"
-                  disabled={!canEdit}
-                />
-              </div>
+                <div className="space-y-2">
+                  <Label htmlFor="hp_qty" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground ml-1">Item Qty</Label>
+                  <Input
+                    id="hp_qty"
+                    type="number"
+                    value={formData.hp_qty}
+                    onChange={(e) => setFormData({ ...formData, hp_qty: e.target.value })}
+                    placeholder="Enter Item Qty"
+                    className="rounded-xl bg-background border-border/30 h-11"
+                    disabled={!canEdit}
+                  />
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="tank_qty" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground ml-1">Tank Qty</Label>
-                <Input
-                  id="tank_qty"
-                  type="number"
-                  value={formData.tank_qty}
-                  onChange={(e) => setFormData({ ...formData, tank_qty: e.target.value })}
-                  placeholder="Enter Tank Qty"
-                  className="rounded-xl bg-background border-border/30 h-11"
-                  disabled={!canEdit}
-                />
+                <div className="space-y-2">
+                  <Label htmlFor="tank_type" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground ml-1">Tank Type</Label>
+                  <Input
+                    id="tank_type"
+                    type="text"
+                    placeholder="Enter tank type"
+                    value={formData.tank_type}
+                    onChange={(e) => setFormData({ ...formData, tank_type: e.target.value })}
+                    className="rounded-xl bg-background border-border/30 h-11"
+                    disabled={!canEdit}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="tank_qty" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground ml-1">Tank Qty</Label>
+                  <Input
+                    id="tank_qty"
+                    type="number"
+                    value={formData.tank_qty}
+                    onChange={(e) => setFormData({ ...formData, tank_qty: e.target.value })}
+                    placeholder="Enter Tank Qty"
+                    className="rounded-xl bg-background border-border/30 h-11"
+                    disabled={!canEdit}
+                  />
+                </div>
               </div>
-            </div>
-          </section>
+            </section>
+          )}
 
           {/* Work Remark */}
           <section className="space-y-6">
             <div className="flex items-center gap-3">
-              <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center font-bold text-xs text-muted-foreground border border-border/50">3</div>
+              <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center font-bold text-xs text-muted-foreground border border-border/50">
+                {isPurchaseMode ? "2" : "3"}
+              </div>
               <h3 className="font-bold text-foreground uppercase text-xs tracking-widest">Operational Remarks</h3>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="work_remark" className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">Project Notes / Terms</Label>
+              <Label htmlFor="work_remark" className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">
+                {isPurchaseMode ? "Vendor Notes / Terms" : "Project Notes / Terms"}
+              </Label>
               <Textarea
                 id="work_remark"
                 value={formData.work_remark}
                 onChange={(e) => setFormData({ ...formData, work_remark: e.target.value })}
-                placeholder="Enter Project Notes / Terms"
+                placeholder={isPurchaseMode ? "Enter Vendor Notes / Terms" : "Enter Project Notes / Terms"}
                 className="rounded-xl bg-muted/30 border-border/50 focus:bg-background transition-all min-h-[100px] resize-none"
                 disabled={!canEdit}
               />
@@ -724,7 +791,7 @@ export function ProjectForm({ project, mode }: ProjectFormProps) {
               ) : (
                 <div className="flex items-center gap-2 text-lg">
                   <Save className="h-5 w-5" />
-                  {mode === "create" ? "Launch Project" : "Sync Changes"}
+                  {mode === "create" ? (isPurchaseMode ? "Create Vendor" : "Launch Project") : "Sync Changes"}
                 </div>
               )}
             </Button>

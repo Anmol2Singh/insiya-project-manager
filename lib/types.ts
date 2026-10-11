@@ -119,4 +119,67 @@ export interface DBData {
   calling_records: CallingRecord[]
   swh_checklist: SwhChecklistItem[]
   work_remarks: WorkRemark[]
+  purchases?: Purchase[]
+  purchase_ledger_entries?: PurchaseLedgerEntry[]
+  purchase_calling_records?: CallingRecord[]
 }
+
+export interface Purchase {
+  id: string
+  id_no: number
+  order_type: string
+  site_name: string // Vendor Name
+  mobile_number?: string | null
+  address: string // Vendor Address
+  quotation_value: number
+  payment_paid: number
+  balance: number
+  firm_name?: string | null
+  party_print_name?: string | null
+  company_id: string
+  reminder_date?: string | null
+  last_call_remark?: string | null
+  created_at: string
+  updated_at: string
+  // Compatibility fields
+  order_value?: number
+  extra_work_value?: number
+  payment_received?: number
+  salesman_name?: string | null
+  work_remark?: string | null
+  hp_type?: string | null
+  hp_qty?: number | null
+  tank_type?: string | null
+  tank_qty?: number | null
+  sales_m_value?: number
+  m_outward_value?: number
+  m_balance?: number
+}
+
+export interface PurchaseLedgerEntry {
+  id: string
+  purchase_id: string
+  sr_no: number
+  date: string
+  payment_type: string | null
+  reference_number: string | null
+  invoice_no: string | null
+  particulars: string | null
+  bill_received: boolean // Replaces bill_submitted
+  payment_bill?: boolean | null // Replaces payment_receipt
+  quotation_value: number // Replaces order_value
+  payment_paid: number // Replaces payment_received
+  created_at: string
+  updated_at?: string
+  // Compatibility fields
+  project_id?: string
+  bill_submitted?: boolean
+  payment_receipt?: boolean | null
+  sales_m_value?: number
+  m_outward_value?: number
+  order_value?: number
+  extra_work_value?: number
+  payment_received?: number
+  work_remark?: string | null
+}
+

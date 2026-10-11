@@ -1,6 +1,6 @@
 import * as XLSX from "xlsx"
 import { createClient } from "@/lib/supabase/client"
-import { syncProjectTotals } from "@/lib/project-utils"
+import { syncProjectTotals, syncPurchaseTotals } from "@/lib/project-utils"
 import type {
   Project,
   LedgerEntry,
@@ -9,18 +9,54 @@ import type {
   CallingRecord,
   SwhChecklistItem,
   WorkRemark,
+  Purchase,
+  PurchaseLedgerEntry,
 } from "@/lib/types"
 
 export function exportCustomerLedgerToExcel(
-  project: Project,
-  entries: LedgerEntry[],
-  terms: PaymentTerm[],
-  expenses: Expense[],
-  calls: CallingRecord[],
-  checklist: SwhChecklistItem[],
-  remarks: WorkRemark[]
+  project: Project | Purchase | any,
+  entries: (LedgerEntry | PurchaseLedgerEntry | any)[],
+  terms: PaymentTerm[] = [],
+  expenses: Expense[] = [],
+  calls: CallingRecord[] = [],
+  checklist: SwhChecklistItem[] = [],
+  remarks: WorkRemark[] = [],
+  isPurchase: boolean = false
 ) {
   const workbook = XLSX.utils.book_new()
+
+  if (isPurchase) {
+    // 1. Purchase Financial Ledger Sheet
+    const financialData = entries.map((e: any, idx: number) => ({
+      "SR NO": e.sr_no || idx + 1,
+      Date: e.date || "",
+      "Payment Type": e.payment_type || "",
+      "Reference Number": e.reference_number || "",
+      "Invoice No": e.invoice_no || "",
+      Particulars: e.particulars || "",
+      "Bill Received": (e.bill_received ?? e.bill_submitted) ? "Yes" : "No",
+      "Payment Bill": (e.payment_bill ?? e.payment_receipt) ? "Yes" : "No",
+      "Quotation Value (Rs)": Number(e.quotation_value ?? e.order_value ?? 0),
+      "Payment Paid (Rs)": Number(e.payment_paid ?? e.payment_received ?? 0),
+    }))
+    const financialSheet = XLSX.utils.json_to_sheet(financialData)
+    XLSX.utils.book_append_sheet(workbook, financialSheet, "Purchase Ledger")
+
+    // 2. Call Records Sheet (if any)
+    if (calls && calls.length > 0) {
+      const callsData = calls.map((c, idx) => ({
+        "SR NO": c.sr_no || idx + 1,
+        Date: c.date || "",
+        "Call Description": c.description || "",
+      }))
+      const callsSheet = XLSX.utils.json_to_sheet(callsData)
+      XLSX.utils.book_append_sheet(workbook, callsSheet, "Call Records")
+    }
+
+    const cleanName = (project.site_name || "Vendor").replace(/[^a-zA-Z0-9]/g, "_")
+    XLSX.writeFile(workbook, `${cleanName}_Purchase_Ledger_${new Date().toISOString().slice(0, 10)}.xlsx`)
+    return
+  }
 
   // 1. Financial Ledger Sheet
   const financialData = entries.map((e, idx) => ({
@@ -102,13 +138,75 @@ export function exportCustomerLedgerToExcel(
 
 export async function importCustomerLedgerFromExcel(
   projectId: string,
-  file: File
+  file: File,
+  isPurchase: boolean = false
 ): Promise<{ success: boolean; message: string }> {
   const supabase = createClient()
   const buffer = await file.arrayBuffer()
   const workbook = XLSX.read(buffer, { type: "array" })
 
   let importedCount = 0
+
+  if (isPurchase) {
+    const financialSheetName = workbook.SheetNames.find(
+      (n) => n.toLowerCase().includes("purchase") || n.toLowerCase().includes("financial") || n.toLowerCase().includes("ledger")
+    )
+    if (financialSheetName) {
+      const sheet = workbook.Sheets[financialSheetName]
+      const rows: any[] = XLSX.utils.sheet_to_json(sheet)
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i]
+        const billRec = String(row["Bill Received"] || row["Bill Submitted"] || "").toLowerCase() === "yes" || row["Bill Received"] === true
+        const payBill = String(row["Payment Bill"] || row["Payment Receipt"] || "").toLowerCase() === "yes" || row["Payment Bill"] === true
+
+        const quotVal = Number(row["Quotation Value (Rs)"] || row["Quotation Value"] || row["Order Value (Rs)"] || row["Order Value"]) || 0
+        const paidVal = Number(row["Payment Paid (Rs)"] || row["Payment Paid"] || row["Paid (Rs)"] || row["Payment Received (Rs)"] || row["Payment Received"]) || 0
+
+        await supabase.from("purchase_ledger_entries").insert({
+          purchase_id: projectId,
+          project_id: projectId, // compat
+          sr_no: Number(row["SR NO"] || row["Sr No"] || i + 1),
+          date: row["Date"] || new Date().toISOString().split("T")[0],
+          payment_type: row["Payment Type"] || row["Inventory Type"] || null,
+          reference_number: row["Reference Number"] || row["Reference"] || null,
+          invoice_no: row["Invoice No"] || row["Invoice"] || null,
+          particulars: row["Particulars"] || "Imported Entry",
+          bill_received: billRec,
+          payment_bill: payBill,
+          bill_submitted: billRec,
+          payment_receipt: payBill,
+          quotation_value: quotVal,
+          order_value: quotVal,
+          payment_paid: paidVal,
+          payment_received: paidVal,
+        })
+        importedCount++
+      }
+    }
+
+    // Call records (if sheet present)
+    const callsSheetName = workbook.SheetNames.find((n) => n.toLowerCase().includes("call"))
+    if (callsSheetName) {
+      const sheet = workbook.Sheets[callsSheetName]
+      const rows: any[] = XLSX.utils.sheet_to_json(sheet)
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i]
+        await supabase.from("purchase_calling_records").insert({
+          purchase_id: projectId,
+          sr_no: Number(row["SR NO"] || i + 1),
+          date: row["Date"] || new Date().toISOString().split("T")[0],
+          description: row["Call Description"] || row["Description"] || "Call log",
+        })
+        importedCount++
+      }
+    }
+
+    await syncPurchaseTotals(projectId)
+    return {
+      success: true,
+      message: `Imported ${importedCount} purchase ledger records from Excel successfully!`,
+    }
+  }
 
   // 1. Financial Ledger
   const financialSheetName = workbook.SheetNames.find(
